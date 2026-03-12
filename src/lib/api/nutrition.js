@@ -159,3 +159,85 @@ export async function copyYesterdayMeals(userId, category) {
   const { error: insErr } = await supabase.from('logged_meals').insert(inserts)
   return { error: insErr }
 }
+
+// --- Saved Meals ---
+
+export async function getSavedMeals(userId) {
+  const { data, error } = await supabase
+    .from('saved_meals')
+    .select('*')
+    .eq('user_id', userId)
+    .order('use_count', { ascending: false })
+
+  return { data: data ?? [], error }
+}
+
+export async function saveMeal(userId, { name, category, protein, fat, carbs }) {
+  const calories = protein * 4 + carbs * 4 + fat * 9
+
+  const { data, error } = await supabase
+    .from('saved_meals')
+    .insert({ user_id: userId, name, category, calories, protein, fat, carbs })
+    .select('*')
+    .single()
+
+  return { data, error }
+}
+
+export async function updateSavedMeal(userId, mealId, { name, category, protein, fat, carbs }) {
+  const calories = protein * 4 + carbs * 4 + fat * 9
+
+  const { data, error } = await supabase
+    .from('saved_meals')
+    .update({ name, category, calories, protein, fat, carbs })
+    .eq('id', mealId)
+    .eq('user_id', userId)
+    .select('*')
+    .single()
+
+  return { data, error }
+}
+
+export async function deleteSavedMeal(userId, mealId) {
+  const { error } = await supabase
+    .from('saved_meals')
+    .delete()
+    .eq('id', mealId)
+    .eq('user_id', userId)
+
+  return { error }
+}
+
+export async function logSavedMeal(userId, savedMeal) {
+  const today = isoDate(new Date())
+
+  const { data: log, error: logErr } = await ensureDailyLog(userId, today)
+  if (logErr) return { data: null, error: logErr }
+
+  const { data, error } = await supabase
+    .from('logged_meals')
+    .insert({
+      daily_log_id: log.id,
+      user_id: userId,
+      name: savedMeal.name,
+      category: savedMeal.category,
+      protein: savedMeal.protein,
+      fat: savedMeal.fat,
+      carbs: savedMeal.carbs,
+      calories: savedMeal.calories,
+    })
+    .select('*')
+    .single()
+
+  if (error) return { data: null, error }
+
+  // Increment use count (fire and forget)
+  supabase
+    .from('saved_meals')
+    .update({ use_count: (savedMeal.use_count || 0) + 1 })
+    .eq('id', savedMeal.id)
+    .eq('user_id', userId)
+    .then(() => {})
+
+  return { data, error: null }
+}
