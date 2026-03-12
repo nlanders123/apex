@@ -82,22 +82,12 @@ function GlobalErrorCatcher({ children }) {
   )
 }
 
-const diag = window.__diag || (() => {})
-diag('JS module loaded, calling createRoot...')
-
-try {
-  const root = createRoot(document.getElementById('root'))
-  diag('createRoot OK, calling render...')
-  root.render(
-    <StrictMode>
-      <GlobalErrorCatcher>
-        <ErrorBoundary>
-          <App />
-        </ErrorBoundary>
-      </GlobalErrorCatcher>
-    </StrictMode>
-  )
-  diag('render() called — React should be mounting')
-} catch (e) {
-  diag('FATAL in mount: ' + (e.stack || e.message || e))
-}
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <GlobalErrorCatcher>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </GlobalErrorCatcher>
+  </StrictMode>
+)

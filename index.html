@@ -8,19 +8,6 @@
   </head>
   <body>
     <div id="root"></div>
-    <div id="boot-diag" style="position:fixed;inset:0;z-index:99999;background:#09090b;color:#a1a1aa;font-family:monospace;font-size:13px;padding:24px;overflow:auto;">
-      <div style="color:#fff;font-size:18px;margin-bottom:12px;">Apex boot diagnostics</div>
-      <div id="diag-log"></div>
-    </div>
-    <script>
-      window.__diag = function(msg) {
-        var el = document.getElementById('diag-log');
-        if (el) el.innerHTML += '<div>' + new Date().toISOString().slice(11,23) + ' ' + msg + '</div>';
-      };
-      window.__diag('HTML parsed, loading JS module...');
-      window.addEventListener('error', function(e) { window.__diag('ERROR: ' + (e.message || e)); });
-      window.addEventListener('unhandledrejection', function(e) { window.__diag('REJECTION: ' + (e.reason?.message || e.reason || e)); });
-    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
