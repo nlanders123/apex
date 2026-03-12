@@ -4,11 +4,12 @@ import { useAuth } from '../../contexts/AuthContext'
 import {
   getSession,
   getSessionExercisesAndSets,
+  getSessionSummary,
   addSet,
   updateSet,
   getLastPerformanceBatch,
 } from '../../lib/api/workouts'
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, Plus, TrendingUp } from 'lucide-react'
 
 export default function SessionLogger() {
   const { id } = useParams()
@@ -19,7 +20,11 @@ export default function SessionLogger() {
   const [exercises, setExercises] = useState([])
   const [setsByExercise, setSetsByExercise] = useState({})
   const [lastPerformance, setLastPerformance] = useState({})
+  const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
+
+  // Detect if this is a past session (older than 12 hours)
+  const isPast = session && (Date.now() - new Date(session.date).getTime()) > 12 * 60 * 60 * 1000
 
   useEffect(() => {
     ;(async () => {
@@ -41,10 +46,17 @@ export default function SessionLogger() {
     setExercises(exerciseResult.exercises)
     setSetsByExercise(exerciseResult.setsByExercise)
 
-    // Fetch progressive overload data (pass full exercise objects for exercise_id matching)
+    // Fetch progressive overload data
     if (exerciseResult.exercises.length > 0) {
       const history = await getLastPerformanceBatch(user.id, exerciseResult.exercises, id)
       setLastPerformance(history)
+    }
+
+    // Fetch summary for past sessions
+    const sessionDate = new Date(sessionResult.data.date)
+    if (Date.now() - sessionDate.getTime() > 12 * 60 * 60 * 1000) {
+      const { exercises: summaryExercises, totalVolume, totalSets } = await getSessionSummary(user.id, id)
+      setSummary({ exercises: summaryExercises, totalVolume, totalSets })
     }
   }
 
@@ -59,7 +71,6 @@ export default function SessionLogger() {
       return
     }
 
-    // Refresh exercises and sets
     const { exercises: ex, setsByExercise: sets } = await getSessionExercisesAndSets(user.id, id)
     setExercises(ex)
     setSetsByExercise(sets)
@@ -82,6 +93,76 @@ export default function SessionLogger() {
     return <div className="min-h-screen bg-zinc-950 text-zinc-500 p-6">Loading...</div>
   }
 
+  // Past session: show read-only summary view
+  if (isPast && summary) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-white p-6 pb-24">
+        <header className="flex items-center gap-3 mb-6">
+          <button
+            onClick={() => nav('/workouts')}
+            className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:bg-zinc-800 transition"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div>
+            <h1 className="text-2xl font-bold">{session?.name}</h1>
+            <p className="text-sm text-zinc-400">
+              {new Date(session.date).toLocaleDateString('en-AU', {
+                weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
+              })}
+            </p>
+          </div>
+        </header>
+
+        {/* Stats bar */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-center">
+            <div className="text-xs text-zinc-500 mb-1">Exercises</div>
+            <div className="text-lg font-bold">{summary.exercises.length}</div>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-center">
+            <div className="text-xs text-zinc-500 mb-1">Sets</div>
+            <div className="text-lg font-bold">{summary.totalSets}</div>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-center">
+            <div className="text-xs text-zinc-500 mb-1">Volume</div>
+            <div className="text-lg font-bold">{summary.totalVolume >= 1000 ? `${(summary.totalVolume / 1000).toFixed(1)}t` : `${summary.totalVolume}kg`}</div>
+          </div>
+        </div>
+
+        {/* Exercise list */}
+        <div className="space-y-3">
+          {summary.exercises.map((ex) => (
+            <button
+              key={ex.id}
+              onClick={() => nav(`/exercise-history?name=${encodeURIComponent(ex.name)}`)}
+              className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:bg-zinc-800/50 transition"
+            >
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="font-bold">{ex.name}</h3>
+                <TrendingUp size={14} className="text-zinc-600" />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {ex.sets.map((s) => (
+                  <span
+                    key={s.id}
+                    className="text-xs bg-zinc-950/50 border border-zinc-800/50 px-2 py-1 rounded-lg text-zinc-300"
+                  >
+                    {s.weight_kg != null ? `${s.weight_kg}kg` : '?'} x {s.reps ?? '?'}
+                  </span>
+                ))}
+              </div>
+              {ex.volume > 0 && (
+                <div className="text-xs text-zinc-500 mt-2">{ex.volume} kg volume</div>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // Active session: editable view
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-6 pb-24">
       <header className="flex items-center gap-3 mb-6">
@@ -110,7 +191,12 @@ export default function SessionLogger() {
             return (
               <div key={ex.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
                 <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-bold text-lg">{ex.name}</h3>
+                  <button
+                    onClick={() => nav(`/exercise-history?name=${encodeURIComponent(ex.name)}`)}
+                    className="font-bold text-lg hover:text-zinc-300 transition text-left"
+                  >
+                    {ex.name}
+                  </button>
                   <button
                     onClick={() => handleAddSet(ex)}
                     className="flex items-center gap-1 text-sm font-bold text-zinc-900 bg-white px-3 py-1.5 rounded-lg hover:bg-zinc-200 transition"

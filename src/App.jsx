@@ -7,6 +7,7 @@ import Nutrition from './pages/Nutrition'
 import Navigation from './components/Navigation'
 import TemplateEditor from './pages/workouts/TemplateEditor'
 import SessionLogger from './pages/workouts/SessionLogger'
+import ExerciseHistory from './pages/workouts/ExerciseHistory'
 
 const ProtectedRoute = ({ children }) => {
   const { user } = useAuth()
@@ -30,6 +31,7 @@ function AppRoutes() {
       <Route path="/nutrition" element={<ProtectedRoute><Nutrition /></ProtectedRoute>} />
       <Route path="/template/:id" element={<ProtectedRoute><TemplateEditor /></ProtectedRoute>} />
       <Route path="/session/:id" element={<ProtectedRoute><SessionLogger /></ProtectedRoute>} />
+      <Route path="/exercise-history" element={<ProtectedRoute><ExerciseHistory /></ProtectedRoute>} />
     </Routes>
   )
 }

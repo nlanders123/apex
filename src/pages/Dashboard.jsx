@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
 import { getProfile } from '../lib/api/profile'
 import { getTodayMeals } from '../lib/api/nutrition'
-import { getSessions, getTemplates } from '../lib/api/workouts'
+import { getSessions, getTemplates, getWorkoutStats } from '../lib/api/workouts'
 import { Utensils, Dumbbell, ChevronRight, Play } from 'lucide-react'
 
 export default function Dashboard() {
@@ -15,21 +15,24 @@ export default function Dashboard() {
   const [todayTotals, setTodayTotals] = useState({ protein: 0, fat: 0, carbs: 0, calories: 0 })
   const [lastSession, setLastSession] = useState(null)
   const [templates, setTemplates] = useState([])
+  const [stats, setStats] = useState({ thisWeek: 0, streak: 0, total: 0 })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     ;(async () => {
-      const [profileResult, mealsResult, sessionsResult, templatesResult] = await Promise.all([
+      const [profileResult, mealsResult, sessionsResult, templatesResult, statsResult] = await Promise.all([
         getProfile(user.id),
         getTodayMeals(user.id),
         getSessions(user.id, 1),
         getTemplates(user.id),
+        getWorkoutStats(user.id),
       ])
 
       if (profileResult.data) setProfile(profileResult.data)
       if (!mealsResult.error) setTodayTotals(mealsResult.totals)
       if (sessionsResult.data?.length) setLastSession(sessionsResult.data[0])
       if (templatesResult.data) setTemplates(templatesResult.data)
+      if (!statsResult.error) setStats(statsResult)
 
       setLoading(false)
     })()
@@ -134,6 +137,24 @@ export default function Dashboard() {
             {lastSession.duration_minutes ? ` · ${lastSession.duration_minutes} min` : ''}
           </div>
         </button>
+      )}
+
+      {/* Workout stats */}
+      {stats.total > 0 && (
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
+            <div className="text-2xl font-bold">{stats.thisWeek}</div>
+            <div className="text-xs text-zinc-500">This week</div>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
+            <div className="text-2xl font-bold">{stats.streak}</div>
+            <div className="text-xs text-zinc-500">Day streak</div>
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
+            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-xs text-zinc-500">Total</div>
+          </div>
+        </div>
       )}
 
       {/* Quick start */}

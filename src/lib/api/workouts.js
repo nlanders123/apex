@@ -238,6 +238,150 @@ export async function getLastPerformance(userId, { exerciseId, name }, excludeSe
 }
 
 /**
+ * Get full session summary: exercises with their sets and volume totals.
+ */
+export async function getSessionSummary(userId, sessionId) {
+  const { exercises, setsByExercise, error } = await getSessionExercisesAndSets(userId, sessionId)
+  if (error) return { exercises: [], totalVolume: 0, totalSets: 0, error }
+
+  let totalVolume = 0
+  let totalSets = 0
+
+  const summary = exercises.map((ex) => {
+    const sets = (setsByExercise[ex.id] || []).filter((s) => !s.is_warmup)
+    const volume = sets.reduce((acc, s) => acc + (s.weight_kg || 0) * (s.reps || 0), 0)
+    const bestSet = sets.reduce((best, s) => {
+      const w = s.weight_kg || 0
+      return w > (best.weight_kg || 0) ? s : best
+    }, sets[0] || {})
+
+    totalVolume += volume
+    totalSets += sets.length
+
+    return {
+      ...ex,
+      sets,
+      setCount: sets.length,
+      volume: Math.round(volume),
+      bestWeight: bestSet.weight_kg || 0,
+      bestReps: bestSet.reps || 0,
+    }
+  })
+
+  return { exercises: summary, totalVolume: Math.round(totalVolume), totalSets, error: null }
+}
+
+/**
+ * Get full history for a specific exercise across all sessions.
+ * Returns sessions sorted newest first with their sets.
+ */
+export async function getExerciseHistory(userId, exerciseName, limit = 20) {
+  const { data: loggedExercises, error } = await supabase
+    .from('logged_exercises')
+    .select(`
+      id,
+      name,
+      session_id,
+      workout_sessions!inner(id, name, date)
+    `)
+    .eq('user_id', userId)
+    .eq('name', exerciseName)
+    .order('workout_sessions(date)', { ascending: false })
+    .limit(limit)
+
+  if (error || !loggedExercises?.length) return { history: [], error }
+
+  const exIds = loggedExercises.map((e) => e.id)
+  const { data: allSets, error: setsErr } = await supabase
+    .from('logged_sets')
+    .select('*')
+    .in('exercise_id', exIds)
+    .eq('user_id', userId)
+    .order('set_number', { ascending: true })
+
+  if (setsErr) return { history: [], error: setsErr }
+
+  const setsMap = {}
+  for (const s of allSets ?? []) {
+    setsMap[s.exercise_id] = setsMap[s.exercise_id] || []
+    setsMap[s.exercise_id].push(s)
+  }
+
+  const history = loggedExercises.map((ex) => {
+    const sets = (setsMap[ex.id] || []).filter((s) => !s.is_warmup)
+    const topSet = sets.reduce((best, s) => {
+      const w = s.weight_kg || 0
+      return w > (best.weight_kg || 0) ? s : best
+    }, sets[0] || {})
+    const volume = sets.reduce((acc, s) => acc + (s.weight_kg || 0) * (s.reps || 0), 0)
+
+    return {
+      sessionId: ex.session_id,
+      sessionName: ex.workout_sessions.name,
+      date: ex.workout_sessions.date,
+      sets,
+      setCount: sets.length,
+      topWeight: topSet.weight_kg || 0,
+      topReps: topSet.reps || 0,
+      volume: Math.round(volume),
+    }
+  })
+
+  return { history, error: null }
+}
+
+/**
+ * Get workout stats: weekly count, current streak, total sessions.
+ */
+export async function getWorkoutStats(userId) {
+  const { data: sessions, error } = await supabase
+    .from('workout_sessions')
+    .select('date')
+    .eq('user_id', userId)
+    .order('date', { ascending: false })
+
+  if (error || !sessions?.length) return { thisWeek: 0, streak: 0, total: 0, error }
+
+  const total = sessions.length
+
+  // This week (Mon–Sun)
+  const now = new Date()
+  const dayOfWeek = now.getDay() || 7 // Mon=1, Sun=7
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - dayOfWeek + 1)
+  monday.setHours(0, 0, 0, 0)
+  const thisWeek = sessions.filter((s) => new Date(s.date) >= monday).length
+
+  // Streak: consecutive days with workouts (looking back from today)
+  const uniqueDays = [...new Set(sessions.map((s) => s.date.split('T')[0]))].sort().reverse()
+  let streak = 0
+  const today = now.toISOString().split('T')[0]
+  let checkDate = new Date(today)
+
+  // Allow streak to start from today or yesterday
+  if (uniqueDays[0] !== today) {
+    const yesterday = new Date(checkDate)
+    yesterday.setDate(yesterday.getDate() - 1)
+    if (uniqueDays[0] !== yesterday.toISOString().split('T')[0]) {
+      return { thisWeek, streak: 0, total, error: null }
+    }
+    checkDate = yesterday
+  }
+
+  for (const day of uniqueDays) {
+    const expected = checkDate.toISOString().split('T')[0]
+    if (day === expected) {
+      streak++
+      checkDate.setDate(checkDate.getDate() - 1)
+    } else if (day < expected) {
+      break
+    }
+  }
+
+  return { thisWeek, streak, total, error: null }
+}
+
+/**
  * Batch version for multiple exercises. Used by SessionLogger on load.
  */
 export async function getLastPerformanceBatch(userId, exercises, excludeSessionId) {

@@ -80,21 +80,29 @@ export default function Workouts() {
               No sessions yet.
             </div>
           ) : (
-            sessions.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => nav(`/session/${s.id}`)}
-                className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:bg-zinc-800/50 transition flex justify-between items-center"
-              >
-                <div>
-                  <div className="font-bold">{s.name}</div>
-                  <div className="text-xs text-zinc-500">
-                    {new Date(s.date).toLocaleString()}
+            sessions.map((s) => {
+              const daysDiff = Math.floor((Date.now() - new Date(s.date).getTime()) / (1000 * 60 * 60 * 24))
+              const timeAgo = daysDiff === 0 ? 'Today' : daysDiff === 1 ? 'Yesterday' : `${daysDiff}d ago`
+
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => nav(`/session/${s.id}`)}
+                  className="w-full text-left bg-zinc-900 border border-zinc-800 rounded-2xl p-4 hover:bg-zinc-800/50 transition flex justify-between items-center"
+                >
+                  <div>
+                    <div className="font-bold">{s.name}</div>
+                    <div className="text-xs text-zinc-500">
+                      {new Date(s.date).toLocaleDateString('en-AU', {
+                        weekday: 'short', day: 'numeric', month: 'short',
+                      })}
+                      <span className="text-zinc-600 ml-2">{timeAgo}</span>
+                    </div>
                   </div>
-                </div>
-                <ChevronRight className="text-zinc-600" />
-              </button>
-            ))
+                  <ChevronRight className="text-zinc-600" size={18} />
+                </button>
+              )
+            })
           )}
         </div>
       ) : (
