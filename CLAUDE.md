@@ -8,7 +8,7 @@
 A fitness tracker PWA that combines workout logging and nutrition tracking in one app. Built as a Supabase + React product targeting users who find MyFitnessPal bloated and expensive, and who currently split their tracking across multiple apps/spreadsheets.
 
 **Owner:** Neil Landers (nmalanders@yahoo.com)
-**Repo:** github.com/nlanders123/gym-tracker (to be renamed to `apex`)
+**Repo:** github.com/nlanders123/apex
 **Live:** Deployed on Vercel (PWA)
 
 ## Tech Stack
@@ -106,7 +106,7 @@ apex/
 
 ```bash
 # Clone and install
-git clone https://github.com/nlanders123/gym-tracker.git apex
+git clone https://github.com/nlanders123/apex.git
 cd apex
 npm install
 

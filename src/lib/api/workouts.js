@@ -199,13 +199,12 @@ export async function updateSet(userId, setId, patch) {
 // ==========================================
 
 /**
- * For a given exercise name and user, find the most recent session
- * where that exercise was logged, and return all sets from it.
- * This powers the "Last time: 80kg x 8" display.
+ * For a given exercise, find the most recent session where it was logged
+ * and return all sets. Prefers exercise_id match (normalised), falls back
+ * to name match (legacy free-text data).
  */
-export async function getLastPerformance(userId, exerciseName, excludeSessionId) {
-  // Find the most recent logged_exercise with this name, excluding current session
-  const { data: lastExercise, error: exErr } = await supabase
+export async function getLastPerformance(userId, { exerciseId, name }, excludeSessionId) {
+  let query = supabase
     .from('logged_exercises')
     .select(`
       id,
@@ -213,15 +212,21 @@ export async function getLastPerformance(userId, exerciseName, excludeSessionId)
       workout_sessions!inner(date)
     `)
     .eq('user_id', userId)
-    .eq('name', exerciseName)
     .neq('session_id', excludeSessionId)
     .order('workout_sessions(date)', { ascending: false })
     .limit(1)
-    .maybeSingle()
+
+  // Prefer exercise_id match (normalised), fall back to name match
+  if (exerciseId) {
+    query = query.eq('exercise_id', exerciseId)
+  } else {
+    query = query.eq('name', name)
+  }
+
+  const { data: lastExercise, error: exErr } = await query.maybeSingle()
 
   if (exErr || !lastExercise) return { sets: [], error: exErr }
 
-  // Get the sets for that exercise
   const { data: sets, error: setsErr } = await supabase
     .from('logged_sets')
     .select('set_number, weight_kg, reps, is_warmup')
@@ -233,19 +238,19 @@ export async function getLastPerformance(userId, exerciseName, excludeSessionId)
 }
 
 /**
- * Batch version: get last performance for multiple exercise names at once.
- * More efficient than calling getLastPerformance per exercise.
+ * Batch version for multiple exercises. Used by SessionLogger on load.
  */
-export async function getLastPerformanceBatch(userId, exerciseNames, excludeSessionId) {
+export async function getLastPerformanceBatch(userId, exercises, excludeSessionId) {
   const result = {}
 
-  // For each unique exercise name, find the most recent performance
-  const uniqueNames = [...new Set(exerciseNames)]
-
-  // Use parallel requests for efficiency
-  const promises = uniqueNames.map(async (name) => {
-    const { sets } = await getLastPerformance(userId, name, excludeSessionId)
-    result[name] = sets
+  const promises = exercises.map(async (ex) => {
+    const { sets } = await getLastPerformance(
+      userId,
+      { exerciseId: ex.exercise_id, name: ex.name },
+      excludeSessionId,
+    )
+    // Key by exercise name for UI lookup
+    result[ex.name] = sets
   })
 
   await Promise.all(promises)

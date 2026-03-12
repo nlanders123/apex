@@ -7,7 +7,7 @@ Apex replaces the spreadsheet-for-workouts + MyFitnessPal-for-food combo with a 
 ## Quick Start
 
 ```bash
-git clone https://github.com/nlanders123/gym-tracker.git apex
+git clone https://github.com/nlanders123/apex.git
 cd apex
 npm install
 cp .env.example .env   # Add your Supabase credentials

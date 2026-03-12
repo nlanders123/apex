@@ -41,10 +41,9 @@ export default function SessionLogger() {
     setExercises(exerciseResult.exercises)
     setSetsByExercise(exerciseResult.setsByExercise)
 
-    // Fetch progressive overload data
+    // Fetch progressive overload data (pass full exercise objects for exercise_id matching)
     if (exerciseResult.exercises.length > 0) {
-      const names = exerciseResult.exercises.map((e) => e.name)
-      const history = await getLastPerformanceBatch(user.id, names, id)
+      const history = await getLastPerformanceBatch(user.id, exerciseResult.exercises, id)
       setLastPerformance(history)
     }
   }

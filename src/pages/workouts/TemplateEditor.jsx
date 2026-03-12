@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import {
@@ -7,8 +7,9 @@ import {
   removeTemplateExercise,
   startSession,
 } from '../../lib/api/workouts'
+import { searchExercises, findExerciseByName } from '../../lib/api/exercises'
 import { supabase } from '../../lib/supabase'
-import { ArrowLeft, Plus, Play } from 'lucide-react'
+import { ArrowLeft, Plus, Play, Search } from 'lucide-react'
 
 export default function TemplateEditor() {
   const { id } = useParams()
@@ -17,8 +18,11 @@ export default function TemplateEditor() {
 
   const [template, setTemplate] = useState(null)
   const [exercises, setExercises] = useState([])
-  const [newExercise, setNewExercise] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [showResults, setShowResults] = useState(false)
   const [loading, setLoading] = useState(true)
+  const searchTimeout = useRef(null)
 
   useEffect(() => {
     ;(async () => {
@@ -32,7 +36,6 @@ export default function TemplateEditor() {
   }, [id])
 
   const fetchTemplate = async () => {
-    // Template fetch stays direct — single one-off query, not worth abstracting
     const { data, error } = await supabase
       .from('workout_templates')
       .select('*')
@@ -49,19 +52,58 @@ export default function TemplateEditor() {
     setExercises(data)
   }
 
-  const handleAddExercise = async (e) => {
-    e.preventDefault()
-    const name = newExercise.trim()
-    if (!name) return
+  // Debounced exercise search
+  const handleSearchChange = (value) => {
+    setSearchQuery(value)
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
 
-    const { error } = await addTemplateExercise(user.id, id, name, exercises.length)
+    if (value.trim().length < 2) {
+      setSearchResults([])
+      setShowResults(false)
+      return
+    }
+
+    searchTimeout.current = setTimeout(async () => {
+      const { data } = await searchExercises(value)
+      setSearchResults(data)
+      setShowResults(true)
+    }, 200)
+  }
+
+  // Add exercise from library (with exercise_id)
+  const handleSelectExercise = async (exercise) => {
+    const { error } = await addTemplateExercise(user.id, id, exercise.name, exercises.length)
     if (error) {
       console.error(error)
       alert(error.message)
       return
     }
 
-    setNewExercise('')
+    setSearchQuery('')
+    setSearchResults([])
+    setShowResults(false)
+    await fetchExercises()
+  }
+
+  // Add custom exercise (free text, no exercise_id yet)
+  const handleAddCustom = async (e) => {
+    e.preventDefault()
+    const name = searchQuery.trim()
+    if (!name) return
+
+    // Try to find a matching exercise in the library first
+    const { data: match } = await findExerciseByName(name)
+
+    const { error } = await addTemplateExercise(user.id, id, match?.name || name, exercises.length)
+    if (error) {
+      console.error(error)
+      alert(error.message)
+      return
+    }
+
+    setSearchQuery('')
+    setSearchResults([])
+    setShowResults(false)
     await fetchExercises()
   }
 
@@ -117,27 +159,51 @@ export default function TemplateEditor() {
         </button>
       </header>
 
-      <form onSubmit={handleAddExercise} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-5">
-        <div className="flex gap-2">
-          <input
-            value={newExercise}
-            onChange={(e) => setNewExercise(e.target.value)}
-            placeholder="Add exercise (e.g. Bench Press)"
-            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-zinc-600"
-          />
+      {/* Exercise search/add */}
+      <div className="relative bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-5">
+        <form onSubmit={handleAddCustom} className="flex gap-2">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-3.5 text-zinc-500" />
+            <input
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onFocus={() => searchResults.length > 0 && setShowResults(true)}
+              onBlur={() => setTimeout(() => setShowResults(false), 200)}
+              placeholder="Search exercises or type custom..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-10 pr-4 py-3 text-white outline-none focus:border-zinc-600"
+            />
+          </div>
           <button
             type="submit"
             className="flex items-center gap-1 bg-zinc-800 border border-zinc-700 px-3 rounded-xl hover:bg-zinc-700 transition font-bold"
           >
             <Plus size={18} />
           </button>
-        </div>
-      </form>
+        </form>
+
+        {/* Search results dropdown */}
+        {showResults && searchResults.length > 0 && (
+          <div className="absolute left-0 right-0 top-full mt-1 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl z-10 max-h-60 overflow-y-auto">
+            {searchResults.map((ex) => (
+              <button
+                key={ex.id}
+                onMouseDown={() => handleSelectExercise(ex)}
+                className="w-full text-left px-4 py-3 hover:bg-zinc-800 transition flex justify-between items-center border-b border-zinc-800/50 last:border-0"
+              >
+                <span className="font-medium text-sm">{ex.name}</span>
+                <span className="text-xs text-zinc-500 capitalize">
+                  {ex.primary_muscle} · {ex.equipment}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="space-y-2">
         {exercises.length === 0 ? (
           <div className="text-sm text-zinc-500 bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-center">
-            Add exercises to this template.
+            Search and add exercises to this template.
           </div>
         ) : (
           exercises.map((ex) => (
