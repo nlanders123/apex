@@ -1,84 +1,56 @@
 # Apex
 
-Apex is a minimalist fitness + nutrition tracker designed for **fast logging** and **progressive overload**.
+Workout + nutrition tracking in one app. No bloat.
 
-This repo is intentionally documented so that any AI coding agent (OpenClaw, Claude Code, Codex, etc.) can quickly understand:
-- what the product is
-- the MVP/V1 scope
-- the architecture and data model
-- what has already been tried
+Apex replaces the spreadsheet-for-workouts + MyFitnessPal-for-food combo with a single PWA that does both. Built for people who know their macros and want fast logging with progressive overload tracking.
 
-## Product Principles
-
-- **Frictionless > feature-rich**: quick-add macros, minimal taps.
-- **Reliable**: data should never “disappear”; changes are small and testable.
-- **Consistent UI**: reusable components, no ad-hoc styling.
-- **AI-ready**: expose data/actions via MCP so agents can read + write in a controlled way.
-
-See: `DESIGN.md`.
-
-## Tech Stack
-
-- Frontend: React + Vite + Tailwind
-- Backend: Supabase (Postgres + Auth + RLS)
-- Deployment: Vercel (web/PWA)
-- AI Integration (local): MCP server in `mcp_apex/`
-
-## Local Development
-
-### 1) Clone
+## Quick Start
 
 ```bash
-git clone https://github.com/nlanders123/gym-tracker.git
-cd gym-tracker
-```
-
-### 2) Create `.env`
-
-Create a `.env` file in the repo root (NOT committed):
-
-```env
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_ANON_KEY
-```
-
-### 3) Install + run
-
-```bash
+git clone https://github.com/nlanders123/gym-tracker.git apex
+cd apex
 npm install
+cp .env.example .env   # Add your Supabase credentials
 npm run dev
 ```
 
-Open the printed URL (usually http://localhost:5173).
+## Tech Stack
 
-## Supabase Setup
+| Layer | Tech |
+|-------|------|
+| Frontend | React 19 + Vite + Tailwind CSS 4 |
+| Backend | Supabase (Postgres + Auth + RLS) |
+| Deployment | Vercel (PWA) |
+| AI Integration | MCP server (Python, local) |
 
-### Base schema
-Run `supabase_schema.sql` once (SQL Editor).
+## Documentation
 
-### Migrations
-Run migrations as they appear in `supabase_migration_*.sql`.
+| Doc | Purpose |
+|-----|---------|
+| [`CLAUDE.md`](./CLAUDE.md) | AI coding context (conventions, structure, rules) |
+| [`CONTRIBUTING.md`](./CONTRIBUTING.md) | How to work on this project |
+| [`docs/PRD.md`](./docs/PRD.md) | Product requirements and roadmap |
+| [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) | Technical architecture and data model |
+| [`docs/DESIGN.md`](./docs/DESIGN.md) | UX/UI principles |
+| [`docs/DECISIONS.md`](./docs/DECISIONS.md) | Architectural Decision Records |
+| [`docs/CHANGELOG.md`](./docs/CHANGELOG.md) | Version history |
 
-Current required workout migration:
-- `supabase_migration_001_workouts.sql`
+## Project Structure
 
-## Repo Structure (high level)
+```
+src/
+├── lib/
+│   ├── supabase.js         # Supabase client
+│   └── api/                # Data layer (all DB operations)
+├── contexts/               # React context providers
+├── components/             # Reusable UI components
+└── pages/                  # Route-level pages
+supabase/
+└── migrations/             # Versioned SQL migrations
+mcp_apex/                   # AI agent access (MCP server)
+docs/                       # Product & engineering docs
+```
 
-- `src/lib/supabase.js` — Supabase client
-- `src/contexts/AuthContext.jsx` — auth state
-- `src/pages/Nutrition.jsx` — nutrition UI + logic
-- `src/pages/Workouts.jsx` — workouts UI + routing to template/session
-- `src/pages/workouts/TemplateEditor.jsx` — template builder
-- `src/pages/workouts/SessionLogger.jsx` — session + set logging
-- `mcp_apex/` — local MCP server scaffold (AI door)
+## License
 
-## Operational Rules (how we build)
-
-- Commit small, working increments.
-- Don’t refactor wide areas without a reason.
-- If a feature requires a schema change, add a `supabase_migration_###.sql`.
-- Keep documentation updated (README + CHANGELOG + DESIGN).
-
-## Status
-
-See `CHANGELOG.md` and `ROADMAP.md`.
+Private. All rights reserved.

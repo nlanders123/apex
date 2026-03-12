@@ -1,4 +1,4 @@
-const CACHE_NAME = "gym-tracker-v4";
+const CACHE_NAME = "apex-v5";
 
 const ASSETS = [
   "./",

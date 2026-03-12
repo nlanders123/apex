@@ -1,6 +1,7 @@
 {
-  "name": "Gym Tracker",
-  "short_name": "Gym Tracker",
+  "name": "Apex",
+  "short_name": "Apex",
+  "description": "Workout + nutrition tracking. No bloat.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#09090b",
