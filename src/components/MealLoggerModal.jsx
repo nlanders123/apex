@@ -24,6 +24,7 @@ export default function MealLoggerModal({
   mealType,
   onLogSuccess,
   existingMeal = null,
+  selectedDate = null,
 }) {
   const { user } = useAuth()
   const toast = useToast()
@@ -36,6 +37,9 @@ export default function MealLoggerModal({
     protein: '',
     fat: '',
     carbs: '',
+    fiber: '',
+    sodium: '',
+    sugar: '',
   })
 
   // Food search state
@@ -56,10 +60,13 @@ export default function MealLoggerModal({
         protein: String(existingMeal.protein ?? ''),
         fat: String(existingMeal.fat ?? ''),
         carbs: String(existingMeal.carbs ?? ''),
+        fiber: String(existingMeal.fiber ?? ''),
+        sodium: String(existingMeal.sodium ?? ''),
+        sugar: String(existingMeal.sugar ?? ''),
       })
       setView('form')
     } else {
-      setForm({ name: 'Quick Add', protein: '', fat: '', carbs: '' })
+      setForm({ name: 'Quick Add', protein: '', fat: '', carbs: '', fiber: '', sodium: '', sugar: '' })
       loadSavedMeals()
     }
   }, [isOpen, existingMeal])
@@ -82,6 +89,9 @@ export default function MealLoggerModal({
     const p = Number(formData.protein) || 0
     const f = Number(formData.fat) || 0
     const c = Number(formData.carbs) || 0
+    const fi = Number(formData.fiber) || 0
+    const so = Number(formData.sodium) || 0
+    const su = Number(formData.sugar) || 0
 
     try {
       if (isEdit) {
@@ -99,7 +109,10 @@ export default function MealLoggerModal({
           protein: p,
           fat: f,
           carbs: c,
-        })
+          fiber: fi,
+          sodium: so,
+          sugar: su,
+        }, selectedDate)
         if (error) throw error
       }
 
@@ -135,7 +148,7 @@ export default function MealLoggerModal({
   const handleLogSaved = async (meal) => {
     setLoading(true)
     try {
-      const { error } = await logSavedMeal(user.id, meal)
+      const { error } = await logSavedMeal(user.id, meal, selectedDate)
       if (error) throw error
       onLogSuccess()
       onClose()
@@ -165,6 +178,9 @@ export default function MealLoggerModal({
         protein: p,
         fat: f,
         carbs: c,
+        fiber: Number(formData.fiber) || null,
+        sodium: Number(formData.sodium) || null,
+        sugar: Number(formData.sugar) || null,
       })
       if (error) throw error
       loadSavedMeals()
@@ -207,6 +223,9 @@ export default function MealLoggerModal({
         protein: String(data.protein),
         fat: String(data.fat),
         carbs: String(data.carbs),
+        fiber: String(data.fiber || ''),
+        sodium: String(data.sodium || ''),
+        sugar: String(data.sugar || ''),
       })
     } catch (err) {
       setScanError('Failed to look up barcode')
@@ -230,6 +249,9 @@ export default function MealLoggerModal({
       protein: String(food.protein),
       fat: String(food.fat),
       carbs: String(food.carbs),
+      fiber: String(food.fiber || ''),
+      sodium: String(food.sodium || ''),
+      sugar: String(food.sugar || ''),
     })
     setSearchResults([])
     setSearchQuery('')
@@ -256,7 +278,7 @@ export default function MealLoggerModal({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setView('form')}
+                onClick={() => setView(savedMeals.length > 0 ? 'pick' : 'form')}
                 className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 text-zinc-400 hover:text-white transition"
               >
                 <ChevronLeft size={16} strokeWidth={2.5} />
@@ -363,6 +385,13 @@ export default function MealLoggerModal({
           <div className="space-y-2">
             <button
               type="button"
+              onClick={() => setView('search')}
+              className="w-full flex items-center justify-center gap-2 bg-white text-zinc-950 font-bold rounded-xl py-3.5 hover:bg-zinc-200 transition active:scale-[0.98]"
+            >
+              <Search size={18} /> Search food database
+            </button>
+            <button
+              type="button"
               onClick={() => setView('scanner')}
               className="w-full flex items-center justify-center gap-2 bg-zinc-800 text-white font-bold rounded-xl py-3.5 hover:bg-zinc-700 transition active:scale-[0.98]"
             >
@@ -371,9 +400,9 @@ export default function MealLoggerModal({
             <button
               type="button"
               onClick={() => setView('form')}
-              className="w-full bg-white text-zinc-950 font-bold rounded-xl py-3.5 hover:bg-zinc-200 transition active:scale-[0.98]"
+              className="w-full bg-zinc-800 text-white font-bold rounded-xl py-3.5 hover:bg-zinc-700 transition active:scale-[0.98]"
             >
-              Log custom meal
+              Log custom macros
             </button>
           </div>
         </div>
@@ -444,7 +473,23 @@ export default function MealLoggerModal({
 
         {scanError && (
           <div className="bg-red-500/10 border border-red-500/50 text-red-400 rounded-xl p-3 text-sm mb-4">
-            {scanError}
+            <div>{scanError}</div>
+            <div className="flex gap-2 mt-2">
+              <button
+                type="button"
+                onClick={() => { setScanError(null); setView('search') }}
+                className="text-xs font-bold text-white bg-zinc-800 rounded-lg px-3 py-1.5 hover:bg-zinc-700 transition"
+              >
+                Search instead
+              </button>
+              <button
+                type="button"
+                onClick={() => { setScanError(null); setView('scanner') }}
+                className="text-xs font-bold text-zinc-400 hover:text-white transition"
+              >
+                Try again
+              </button>
+            </div>
           </div>
         )}
 

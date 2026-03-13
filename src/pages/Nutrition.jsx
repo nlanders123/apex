@@ -1,15 +1,33 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Copy } from 'lucide-react'
+import { Plus, Copy, ChevronLeft, ChevronRight, Droplets, ChefHat, BarChart3 } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { getProfile, updateTargets } from '../lib/api/profile'
-import { getTodayMeals, copyYesterdayMeals } from '../lib/api/nutrition'
+import { getMealsForDate, copyYesterdayMeals, addWater, getWeekSummary } from '../lib/api/nutrition'
 import MealLoggerModal from '../components/MealLoggerModal'
+import RecipeBuilderModal from '../components/RecipeBuilderModal'
 
 const MEAL_CATEGORIES = ['Breakfast', 'Lunch', 'Dinner', 'Snacks']
+const WATER_INCREMENTS = [250, 500]
 
 function labelToEnum(label) {
   return label.toLowerCase() === 'snacks' ? 'snack' : label.toLowerCase()
+}
+
+function isoDate(d) {
+  return d.toISOString().split('T')[0]
+}
+
+function formatDateLabel(dateStr) {
+  const today = isoDate(new Date())
+  const yesterday = isoDate(new Date(Date.now() - 86400000))
+  if (dateStr === today) return 'Today'
+  if (dateStr === yesterday) return 'Yesterday'
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-AU', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  })
 }
 
 export default function Nutrition() {
@@ -21,19 +39,34 @@ export default function Nutrition() {
   const [isEditingTargets, setIsEditingTargets] = useState(false)
   const [targetForm, setTargetForm] = useState({ protein: 0, fat: 0, carbs: 0 })
 
-  const [todayMeals, setTodayMeals] = useState([])
-  const [totals, setTotals] = useState({ protein: 0, fat: 0, carbs: 0, calories: 0 })
+  const [selectedDate, setSelectedDate] = useState(isoDate(new Date()))
+  const [meals, setMeals] = useState([])
+  const [totals, setTotals] = useState({ protein: 0, fat: 0, carbs: 0, calories: 0, fiber: 0, sodium: 0, sugar: 0 })
+  const [waterMl, setWaterMl] = useState(0)
 
   const [activeModalMealType, setActiveModalMealType] = useState(null)
   const [editingMeal, setEditingMeal] = useState(null)
+  const [recipeModalOpen, setRecipeModalOpen] = useState(false)
+  const [recipeMealType, setRecipeMealType] = useState('Dinner')
+  const [weekSummary, setWeekSummary] = useState(null)
+  const [showWeekly, setShowWeekly] = useState(false)
+
+  const isToday = selectedDate === isoDate(new Date())
 
   useEffect(() => {
     ;(async () => {
       await fetchProfile()
-      await fetchTodayMeals()
+      await fetchMeals()
       setLoading(false)
     })()
   }, [])
+
+  useEffect(() => {
+    if (!loading) {
+      fetchMeals()
+      fetchWeekSummary()
+    }
+  }, [selectedDate])
 
   const fetchProfile = async () => {
     const { data, error } = await getProfile(user.id)
@@ -47,12 +80,18 @@ export default function Nutrition() {
     })
   }
 
-  const fetchTodayMeals = async () => {
-    const { meals, totals: t, error } = await getTodayMeals(user.id)
+  const fetchWeekSummary = async () => {
+    const { averages, error } = await getWeekSummary(user.id, selectedDate)
+    if (!error && averages) setWeekSummary(averages)
+  }
+
+  const fetchMeals = async () => {
+    const { meals: m, totals: t, waterMl: w, error } = await getMealsForDate(user.id, selectedDate)
     if (error) { console.error(error); return }
 
-    setTodayMeals(meals)
+    setMeals(m)
     setTotals(t)
+    setWaterMl(w)
   }
 
   const remaining = useMemo(() => {
@@ -89,7 +128,25 @@ export default function Nutrition() {
       return
     }
 
-    await fetchTodayMeals()
+    await fetchMeals()
+  }
+
+  const handleAddWater = async (ml) => {
+    const { error } = await addWater(user.id, ml, selectedDate)
+    if (error) {
+      toast(error.message || 'Failed to log water', 'error')
+      return
+    }
+    setWaterMl((prev) => prev + ml)
+    toast(`+${ml}ml water`, 'success')
+  }
+
+  const navigateDate = (offset) => {
+    const d = new Date(selectedDate + 'T00:00:00')
+    d.setDate(d.getDate() + offset)
+    // Don't allow future dates
+    if (d > new Date()) return
+    setSelectedDate(isoDate(d))
   }
 
   const openAddModal = (mealLabel) => {
@@ -117,21 +174,44 @@ export default function Nutrition() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white p-6 pb-24">
-      <header className="mb-6 flex justify-between items-end">
-        <div>
+      {/* Header with date navigation */}
+      <header className="mb-6">
+        <div className="flex justify-between items-end mb-4">
           <h1 className="text-3xl font-bold tracking-tight">Nutrition</h1>
-          <p className="text-zinc-400 text-sm mt-1">Fast logging. No bloat.</p>
+          <button
+            onClick={() => setIsEditingTargets(!isEditingTargets)}
+            className="text-xs font-bold text-zinc-400 bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800 hover:text-white transition"
+          >
+            {isEditingTargets ? 'Cancel' : 'Edit targets'}
+          </button>
         </div>
-        <button
-          onClick={() => setIsEditingTargets(!isEditingTargets)}
-          className="text-xs font-bold text-zinc-400 bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800 hover:text-white transition"
-        >
-          {isEditingTargets ? 'Cancel' : 'Edit targets'}
-        </button>
+
+        {/* Date navigator */}
+        <div className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-2 py-1.5">
+          <button
+            onClick={() => navigateDate(-1)}
+            className="p-2 text-zinc-400 hover:text-white transition"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            onClick={() => setSelectedDate(isoDate(new Date()))}
+            className={`text-sm font-bold px-3 py-1 rounded-lg transition ${isToday ? 'text-white' : 'text-zinc-400 hover:text-white'}`}
+          >
+            {formatDateLabel(selectedDate)}
+          </button>
+          <button
+            onClick={() => navigateDate(1)}
+            disabled={isToday}
+            className="p-2 text-zinc-400 hover:text-white transition disabled:text-zinc-700 disabled:cursor-not-allowed"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
       </header>
 
       {isEditingTargets ? (
-        <form onSubmit={handleUpdateTargets} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
+        <form onSubmit={handleUpdateTargets} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
           <h3 className="font-bold mb-4">Set daily targets</h3>
           <div className="grid grid-cols-3 gap-4 mb-4">
             {[
@@ -155,7 +235,7 @@ export default function Nutrition() {
           </button>
         </form>
       ) : (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-8">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 mb-6">
           <div className="flex justify-between items-end mb-6">
             <div>
               <div className="text-zinc-500 text-xs font-bold uppercase tracking-wider mb-1">Calories</div>
@@ -169,7 +249,7 @@ export default function Nutrition() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3 text-sm">
+          <div className="grid grid-cols-3 gap-3 text-sm mb-4">
             {[
               { label: 'Protein', value: totals.protein, target: profile?.target_protein, rem: remaining.protein },
               { label: 'Fat', value: totals.fat, target: profile?.target_fat, rem: remaining.fat },
@@ -184,25 +264,115 @@ export default function Nutrition() {
               </div>
             ))}
           </div>
+
+          {/* Micronutrients row */}
+          {(totals.fiber > 0 || totals.sugar > 0 || totals.sodium > 0) && (
+            <div className="flex gap-4 text-xs text-zinc-500 border-t border-zinc-800/50 pt-3">
+              {totals.fiber > 0 && <span>Fiber: <span className="text-zinc-300">{totals.fiber}g</span></span>}
+              {totals.sugar > 0 && <span>Sugar: <span className="text-zinc-300">{totals.sugar}g</span></span>}
+              {totals.sodium > 0 && <span>Sodium: <span className="text-zinc-300">{totals.sodium}mg</span></span>}
+            </div>
+          )}
         </div>
       )}
 
+      {/* Water tracking */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Droplets size={16} className="text-blue-400" />
+            <span className="text-sm font-bold text-zinc-400">Water</span>
+            <span className="text-lg font-bold text-white ml-2">
+              {waterMl >= 1000 ? `${(waterMl / 1000).toFixed(1)}L` : `${waterMl}ml`}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            {WATER_INCREMENTS.map((ml) => (
+              <button
+                key={ml}
+                onClick={() => handleAddWater(ml)}
+                className="text-xs font-bold text-zinc-300 bg-zinc-800 px-3 py-1.5 rounded-lg hover:bg-zinc-700 transition active:scale-95"
+              >
+                +{ml}ml
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Weekly summary toggle */}
+      {weekSummary && (
+        <div className="mb-6">
+          <button
+            onClick={() => setShowWeekly(!showWeekly)}
+            className="flex items-center gap-2 text-xs font-bold text-zinc-400 hover:text-white transition mb-2"
+          >
+            <BarChart3 size={14} />
+            {showWeekly ? 'Hide' : 'Show'} weekly averages ({weekSummary.daysLogged} days logged)
+          </button>
+          {showWeekly && (
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+              <div className="text-xs text-zinc-500 font-bold uppercase tracking-wider mb-3">Weekly Average (per day)</div>
+              <div className="grid grid-cols-4 gap-3 text-sm">
+                <div className="text-center">
+                  <div className="text-lg font-bold">{weekSummary.calories}</div>
+                  <div className="text-[11px] text-zinc-500">cal</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-blue-400">{weekSummary.protein}g</div>
+                  <div className="text-[11px] text-zinc-500">protein</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-amber-400">{weekSummary.fat}g</div>
+                  <div className="text-[11px] text-zinc-500">fat</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-lg font-bold text-green-400">{weekSummary.carbs}g</div>
+                  <div className="text-[11px] text-zinc-500">carbs</div>
+                </div>
+              </div>
+              {weekSummary.water_ml > 0 && (
+                <div className="text-xs text-zinc-500 mt-2 border-t border-zinc-800/50 pt-2">
+                  Avg water: <span className="text-zinc-300">{weekSummary.water_ml >= 1000 ? `${(weekSummary.water_ml / 1000).toFixed(1)}L` : `${weekSummary.water_ml}ml`}</span>/day
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Meal categories */}
       <div className="space-y-4">
         {MEAL_CATEGORIES.map((mealLabel) => {
-          const mealsInCategory = todayMeals.filter((m) => m.category === labelToEnum(mealLabel))
+          const mealsInCategory = meals.filter((m) => m.category === labelToEnum(mealLabel))
+          const categoryCalories = mealsInCategory.reduce((sum, m) => sum + (m.calories || 0), 0)
 
           return (
             <div key={mealLabel} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
               <div className="flex justify-between items-center mb-3">
-                <h3 className="font-bold text-lg">{mealLabel}</h3>
+                <div className="flex items-baseline gap-2">
+                  <h3 className="font-bold text-lg">{mealLabel}</h3>
+                  {categoryCalories > 0 && (
+                    <span className="text-xs text-zinc-500 font-medium">{categoryCalories} cal</span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
+                  {isToday && (
+                    <button
+                      onClick={() => handleCopyYesterday(mealLabel)}
+                      className="flex items-center gap-1 text-xs font-bold text-zinc-300 bg-zinc-800 px-2.5 py-1.5 rounded-lg hover:bg-zinc-700 transition"
+                      title="Copy yesterday"
+                    >
+                      <Copy size={14} />
+                      Copy
+                    </button>
+                  )}
                   <button
-                    onClick={() => handleCopyYesterday(mealLabel)}
+                    onClick={() => { setRecipeMealType(mealLabel); setRecipeModalOpen(true) }}
                     className="flex items-center gap-1 text-xs font-bold text-zinc-300 bg-zinc-800 px-2.5 py-1.5 rounded-lg hover:bg-zinc-700 transition"
-                    title="Copy yesterday"
+                    title="Build recipe"
                   >
-                    <Copy size={14} />
-                    Copy
+                    <ChefHat size={14} />
                   </button>
                   <button
                     onClick={() => openAddModal(mealLabel)}
@@ -227,9 +397,12 @@ export default function Nutrition() {
                       title="Click to edit"
                     >
                       <span className="font-medium text-sm">{m.name}</span>
-                      <span className="text-xs text-zinc-500 font-medium">
-                        {m.protein}P  {m.fat}F  {m.carbs}C
-                      </span>
+                      <div className="text-right">
+                        <div className="text-xs text-zinc-400 font-bold">{m.calories} cal</div>
+                        <div className="text-[11px] text-zinc-600">
+                          {m.protein}P  {m.fat}F  {m.carbs}C
+                        </div>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -243,7 +416,8 @@ export default function Nutrition() {
         isOpen={!!activeModalMealType}
         onClose={closeModal}
         mealType={activeModalMealType || ''}
-        onLogSuccess={fetchTodayMeals}
+        onLogSuccess={fetchMeals}
+        selectedDate={selectedDate}
       />
 
       <MealLoggerModal
@@ -251,7 +425,16 @@ export default function Nutrition() {
         onClose={closeModal}
         mealType={editingMeal?.category || ''}
         existingMeal={editingMeal}
-        onLogSuccess={fetchTodayMeals}
+        onLogSuccess={fetchMeals}
+        selectedDate={selectedDate}
+      />
+
+      <RecipeBuilderModal
+        isOpen={recipeModalOpen}
+        onClose={() => setRecipeModalOpen(false)}
+        mealType={recipeMealType}
+        onLogSuccess={fetchMeals}
+        selectedDate={selectedDate}
       />
     </div>
   )

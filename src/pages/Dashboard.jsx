@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../contexts/AuthContext'
@@ -7,7 +7,7 @@ import { getTodayMeals } from '../lib/api/nutrition'
 import { getSessions, getTemplates, getWorkoutStats } from '../lib/api/workouts'
 import { getLatestWeight, logWeight, getWeightHistory } from '../lib/api/weight'
 import { useToast } from '../components/Toast'
-import { Utensils, Dumbbell, ChevronRight, Play, Scale, X } from 'lucide-react'
+import { Utensils, Dumbbell, ChevronRight, Play, Scale, X, TrendingUp, TrendingDown } from 'lucide-react'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -19,6 +19,7 @@ export default function Dashboard() {
   const [templates, setTemplates] = useState([])
   const [stats, setStats] = useState({ thisWeek: 0, streak: 0, total: 0 })
   const [latestWeight, setLatestWeight] = useState(null)
+  const [weightHistory, setWeightHistory] = useState([])
   const [weightInput, setWeightInput] = useState('')
   const [showWeightInput, setShowWeightInput] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -26,13 +27,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     ;(async () => {
-      const [profileResult, mealsResult, sessionsResult, templatesResult, statsResult, weightResult] = await Promise.all([
+      const [profileResult, mealsResult, sessionsResult, templatesResult, statsResult, weightResult, historyResult] = await Promise.all([
         getProfile(user.id),
         getTodayMeals(user.id),
         getSessions(user.id, 1),
         getTemplates(user.id),
         getWorkoutStats(user.id),
         getLatestWeight(user.id),
+        getWeightHistory(user.id, 30),
       ])
 
       if (profileResult.data) setProfile(profileResult.data)
@@ -41,6 +43,7 @@ export default function Dashboard() {
       if (templatesResult.data) setTemplates(templatesResult.data)
       if (!statsResult.error) setStats(statsResult)
       if (weightResult.data) setLatestWeight(weightResult.data)
+      if (historyResult.data?.length) setWeightHistory(historyResult.data)
 
       setLoading(false)
     })()
@@ -57,6 +60,40 @@ export default function Dashboard() {
       </div>
     )
   }
+
+  const weightChart = useMemo(() => {
+    if (weightHistory.length < 2) return null
+    const points = [...weightHistory].reverse().map((h) => h.weight_kg)
+    const max = Math.max(...points)
+    const min = Math.min(...points)
+    const range = max - min || 1
+    const width = 280
+    const height = 80
+    const padding = 4
+    const chartW = width - padding * 2
+    const chartH = height - padding * 2
+
+    const coords = points.map((val, i) => ({
+      x: padding + (i / (points.length - 1)) * chartW,
+      y: padding + chartH - ((val - min) / range) * chartH,
+    }))
+    const pathD = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`).join(' ')
+
+    const oldest = weightHistory[weightHistory.length - 1]
+    const newest = weightHistory[0]
+    const diff = (newest.weight_kg - oldest.weight_kg).toFixed(1)
+
+    return {
+      width,
+      height,
+      coords,
+      pathD,
+      diff,
+      isUp: diff > 0,
+      startDate: new Date(oldest.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+      endDate: new Date(newest.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }),
+    }
+  }, [weightHistory])
 
   const calorieTarget = profile?.target_calories || 0
   const caloriePercent = calorieTarget > 0 ? Math.min(100, Math.round((todayTotals.calories / calorieTarget) * 100)) : 0
@@ -202,6 +239,8 @@ export default function Dashboard() {
               setLatestWeight(data)
               setShowWeightInput(false)
               toast('Weight logged', 'success')
+              const { data: updated } = await getWeightHistory(user.id, 30)
+              if (updated?.length) setWeightHistory(updated)
             }}
             className="flex gap-2"
           >
@@ -235,7 +274,28 @@ export default function Dashboard() {
               <span className="text-xs text-zinc-500">
                 {new Date(latestWeight.date).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
               </span>
+              {weightChart && (
+                <span className={`flex items-center gap-0.5 text-xs ml-auto ${weightChart.isUp ? 'text-red-400' : 'text-green-400'}`}>
+                  {weightChart.isUp ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                  {weightChart.isUp ? '+' : ''}{weightChart.diff} kg
+                </span>
+              )}
             </div>
+
+            {weightChart && (
+              <div className="mt-4 bg-zinc-950/50 border border-zinc-800/50 rounded-xl p-3">
+                <svg viewBox={`0 0 ${weightChart.width} ${weightChart.height}`} className="w-full" style={{ maxHeight: 80 }}>
+                  <path d={weightChart.pathD} fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  {weightChart.coords.map((c, i) => (
+                    <circle key={i} cx={c.x} cy={c.y} r="3" fill="white" />
+                  ))}
+                </svg>
+                <div className="flex justify-between text-[10px] text-zinc-500 mt-1 px-1">
+                  <span>{weightChart.startDate}</span>
+                  <span>{weightChart.endDate}</span>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="text-zinc-500 text-sm">No weight logged yet. Tap Log to start tracking.</div>

@@ -6,7 +6,7 @@ const OFF_BASE = 'https://world.openfoodfacts.org/api/v2'
  */
 export async function lookupBarcode(barcode) {
   try {
-    const res = await fetch(`${OFF_BASE}/product/${barcode}?fields=product_name,nutriments,serving_size,brands`)
+    const res = await fetch(`${OFF_BASE}/product/${barcode}?fields=product_name,nutriments,serving_size,brands,nutrition_grades`)
     if (!res.ok) return { data: null, error: 'Network error' }
 
     const json = await res.json()
@@ -22,6 +22,9 @@ export async function lookupBarcode(barcode) {
     const fat = Math.round(n['fat_serving'] ?? n['fat_100g'] ?? 0)
     const carbs = Math.round(n['carbohydrates_serving'] ?? n['carbohydrates_100g'] ?? 0)
     const calories = Math.round(n['energy-kcal_serving'] ?? n['energy-kcal_100g'] ?? 0)
+    const fiber = Math.round(n['fiber_serving'] ?? n['fiber_100g'] ?? 0)
+    const sodium = Math.round((n['sodium_serving'] ?? n['sodium_100g'] ?? 0) * 1000) // g → mg
+    const sugar = Math.round(n['sugars_serving'] ?? n['sugars_100g'] ?? 0)
 
     const name = [p.brands, p.product_name].filter(Boolean).join(' — ') || 'Unknown product'
 
@@ -32,6 +35,9 @@ export async function lookupBarcode(barcode) {
         fat,
         carbs,
         calories,
+        fiber,
+        sodium,
+        sugar,
         servingSize: p.serving_size || '100g',
         isPerServing: !!(n['proteins_serving'] || n['fat_serving']),
       },
@@ -62,6 +68,9 @@ export async function searchFood(query, limit = 10) {
         fat: Math.round(n['fat_serving'] ?? n['fat_100g'] ?? 0),
         carbs: Math.round(n['carbohydrates_serving'] ?? n['carbohydrates_100g'] ?? 0),
         calories: Math.round(n['energy-kcal_serving'] ?? n['energy-kcal_100g'] ?? 0),
+        fiber: Math.round(n['fiber_serving'] ?? n['fiber_100g'] ?? 0),
+        sodium: Math.round((n['sodium_serving'] ?? n['sodium_100g'] ?? 0) * 1000),
+        sugar: Math.round(n['sugars_serving'] ?? n['sugars_100g'] ?? 0),
         servingSize: p.serving_size || '100g',
       }
     })

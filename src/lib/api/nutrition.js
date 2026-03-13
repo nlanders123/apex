@@ -27,18 +27,22 @@ async function ensureDailyLog(userId, date) {
   return { data: created, error: createErr }
 }
 
-export async function getTodayMeals(userId) {
-  const today = isoDate(new Date())
+const EMPTY_TOTALS = { protein: 0, fat: 0, carbs: 0, calories: 0, fiber: 0, sodium: 0, sugar: 0 }
 
+export async function getTodayMeals(userId) {
+  return getMealsForDate(userId, isoDate(new Date()))
+}
+
+export async function getMealsForDate(userId, dateStr) {
   const { data: logData, error: logErr } = await supabase
     .from('daily_logs')
-    .select('id')
+    .select('id, water_ml')
     .eq('user_id', userId)
-    .eq('date', today)
+    .eq('date', dateStr)
     .maybeSingle()
 
-  if (logErr) return { meals: [], totals: { protein: 0, fat: 0, carbs: 0, calories: 0 }, error: logErr }
-  if (!logData) return { meals: [], totals: { protein: 0, fat: 0, carbs: 0, calories: 0 }, error: null }
+  if (logErr) return { meals: [], totals: { ...EMPTY_TOTALS }, waterMl: 0, error: logErr }
+  if (!logData) return { meals: [], totals: { ...EMPTY_TOTALS }, waterMl: 0, error: null }
 
   const { data: meals, error: mealsErr } = await supabase
     .from('logged_meals')
@@ -46,7 +50,7 @@ export async function getTodayMeals(userId) {
     .eq('daily_log_id', logData.id)
     .order('created_at', { ascending: true })
 
-  if (mealsErr) return { meals: [], totals: { protein: 0, fat: 0, carbs: 0, calories: 0 }, error: mealsErr }
+  if (mealsErr) return { meals: [], totals: { ...EMPTY_TOTALS }, waterMl: 0, error: mealsErr }
 
   const safeMeals = meals ?? []
   const totals = safeMeals.reduce(
@@ -55,18 +59,21 @@ export async function getTodayMeals(userId) {
       fat: acc.fat + (meal.fat || 0),
       carbs: acc.carbs + (meal.carbs || 0),
       calories: acc.calories + (meal.calories || 0),
+      fiber: acc.fiber + (meal.fiber || 0),
+      sodium: acc.sodium + (meal.sodium || 0),
+      sugar: acc.sugar + (meal.sugar || 0),
     }),
-    { protein: 0, fat: 0, carbs: 0, calories: 0 },
+    { ...EMPTY_TOTALS },
   )
 
-  return { meals: safeMeals, totals, error: null }
+  return { meals: safeMeals, totals, waterMl: logData.water_ml || 0, error: null }
 }
 
-export async function logMeal(userId, { category, name, protein, fat, carbs }) {
-  const today = isoDate(new Date())
+export async function logMeal(userId, { category, name, protein, fat, carbs, fiber, sodium, sugar }, dateStr) {
+  const date = dateStr || isoDate(new Date())
   const calories = protein * 4 + carbs * 4 + fat * 9
 
-  const { data: log, error: logErr } = await ensureDailyLog(userId, today)
+  const { data: log, error: logErr } = await ensureDailyLog(userId, date)
   if (logErr) return { data: null, error: logErr }
 
   const { data, error } = await supabase
@@ -80,11 +87,57 @@ export async function logMeal(userId, { category, name, protein, fat, carbs }) {
       fat,
       carbs,
       calories,
+      fiber: fiber || null,
+      sodium: sodium || null,
+      sugar: sugar || null,
     })
     .select('*')
     .single()
 
   return { data, error }
+}
+
+// --- Water Tracking ---
+
+export async function logWater(userId, ml, dateStr) {
+  const date = dateStr || isoDate(new Date())
+  const { data: log, error: logErr } = await ensureDailyLog(userId, date)
+  if (logErr) return { data: null, error: logErr }
+
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .update({ water_ml: ml })
+    .eq('id', log.id)
+    .eq('user_id', userId)
+    .select('water_ml')
+    .single()
+
+  return { data, error }
+}
+
+export async function addWater(userId, ml, dateStr) {
+  const date = dateStr || isoDate(new Date())
+  const { data: log, error: logErr } = await ensureDailyLog(userId, date)
+  if (logErr) return { data: null, error: logErr }
+
+  // Read current, then add
+  const { data: current } = await supabase
+    .from('daily_logs')
+    .select('water_ml')
+    .eq('id', log.id)
+    .single()
+
+  const newTotal = (current?.water_ml || 0) + ml
+
+  const { data, error } = await supabase
+    .from('daily_logs')
+    .update({ water_ml: newTotal })
+    .eq('id', log.id)
+    .eq('user_id', userId)
+    .select('water_ml')
+    .single()
+
+  return { data: { water_ml: data?.water_ml ?? newTotal }, error }
 }
 
 export async function updateMeal(userId, mealId, { name, protein, fat, carbs }) {
@@ -160,6 +213,70 @@ export async function copyYesterdayMeals(userId, category) {
   return { error: insErr }
 }
 
+// --- Weekly Summary ---
+
+export async function getWeekSummary(userId, dateStr) {
+  // Get Monday of the week containing dateStr
+  const d = new Date(dateStr + 'T00:00:00')
+  const dayOfWeek = d.getDay() || 7 // Mon=1, Sun=7
+  const monday = new Date(d)
+  monday.setDate(d.getDate() - dayOfWeek + 1)
+
+  const days = []
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(monday)
+    day.setDate(monday.getDate() + i)
+    days.push(isoDate(day))
+  }
+
+  const { data: logs, error: logErr } = await supabase
+    .from('daily_logs')
+    .select('id, date, water_ml')
+    .eq('user_id', userId)
+    .in('date', days)
+
+  if (logErr || !logs?.length) return { days: [], averages: null, error: logErr }
+
+  const logIds = logs.map((l) => l.id)
+  const { data: meals, error: mealsErr } = await supabase
+    .from('logged_meals')
+    .select('daily_log_id, calories, protein, fat, carbs, fiber, sodium, sugar')
+    .in('daily_log_id', logIds)
+
+  if (mealsErr) return { days: [], averages: null, error: mealsErr }
+
+  // Build per-day totals
+  const mealsByLog = {}
+  for (const m of meals ?? []) {
+    mealsByLog[m.daily_log_id] = mealsByLog[m.daily_log_id] || []
+    mealsByLog[m.daily_log_id].push(m)
+  }
+
+  const daySummaries = logs.map((log) => {
+    const dayMeals = mealsByLog[log.id] || []
+    return {
+      date: log.date,
+      calories: dayMeals.reduce((s, m) => s + (m.calories || 0), 0),
+      protein: dayMeals.reduce((s, m) => s + (m.protein || 0), 0),
+      fat: dayMeals.reduce((s, m) => s + (m.fat || 0), 0),
+      carbs: dayMeals.reduce((s, m) => s + (m.carbs || 0), 0),
+      water_ml: log.water_ml || 0,
+    }
+  })
+
+  const count = daySummaries.length
+  const averages = {
+    calories: Math.round(daySummaries.reduce((s, d) => s + d.calories, 0) / count),
+    protein: Math.round(daySummaries.reduce((s, d) => s + d.protein, 0) / count),
+    fat: Math.round(daySummaries.reduce((s, d) => s + d.fat, 0) / count),
+    carbs: Math.round(daySummaries.reduce((s, d) => s + d.carbs, 0) / count),
+    water_ml: Math.round(daySummaries.reduce((s, d) => s + d.water_ml, 0) / count),
+    daysLogged: count,
+  }
+
+  return { days: daySummaries, averages, error: null }
+}
+
 // --- Saved Meals ---
 
 export async function getSavedMeals(userId) {
@@ -172,12 +289,17 @@ export async function getSavedMeals(userId) {
   return { data: data ?? [], error }
 }
 
-export async function saveMeal(userId, { name, category, protein, fat, carbs }) {
+export async function saveMeal(userId, { name, category, protein, fat, carbs, fiber, sodium, sugar }) {
   const calories = protein * 4 + carbs * 4 + fat * 9
 
   const { data, error } = await supabase
     .from('saved_meals')
-    .insert({ user_id: userId, name, category, calories, protein, fat, carbs })
+    .insert({
+      user_id: userId, name, category, calories, protein, fat, carbs,
+      fiber: fiber || null,
+      sodium: sodium || null,
+      sugar: sugar || null,
+    })
     .select('*')
     .single()
 
@@ -208,10 +330,10 @@ export async function deleteSavedMeal(userId, mealId) {
   return { error }
 }
 
-export async function logSavedMeal(userId, savedMeal) {
-  const today = isoDate(new Date())
+export async function logSavedMeal(userId, savedMeal, dateStr) {
+  const date = dateStr || isoDate(new Date())
 
-  const { data: log, error: logErr } = await ensureDailyLog(userId, today)
+  const { data: log, error: logErr } = await ensureDailyLog(userId, date)
   if (logErr) return { data: null, error: logErr }
 
   const { data, error } = await supabase
@@ -225,6 +347,9 @@ export async function logSavedMeal(userId, savedMeal) {
       fat: savedMeal.fat,
       carbs: savedMeal.carbs,
       calories: savedMeal.calories,
+      fiber: savedMeal.fiber || null,
+      sodium: savedMeal.sodium || null,
+      sugar: savedMeal.sugar || null,
     })
     .select('*')
     .single()

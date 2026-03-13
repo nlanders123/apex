@@ -334,15 +334,29 @@ export async function getExerciseHistory(userId, exerciseName, limit = 20) {
  * Get workout stats: weekly count, current streak, total sessions.
  */
 export async function getWorkoutStats(userId) {
+  // Get total count separately (cheap aggregate)
+  const { count, error: countErr } = await supabase
+    .from('workout_sessions')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+
+  if (countErr) return { thisWeek: 0, streak: 0, total: 0, error: countErr }
+
+  const total = count || 0
+  if (total === 0) return { thisWeek: 0, streak: 0, total: 0, error: null }
+
+  // Only fetch recent sessions for streak/weekly calc (90 days max)
+  const ninetyDaysAgo = new Date()
+  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
+
   const { data: sessions, error } = await supabase
     .from('workout_sessions')
     .select('date')
     .eq('user_id', userId)
+    .gte('date', ninetyDaysAgo.toISOString())
     .order('date', { ascending: false })
 
-  if (error || !sessions?.length) return { thisWeek: 0, streak: 0, total: 0, error }
-
-  const total = sessions.length
+  if (error || !sessions?.length) return { thisWeek: 0, streak: 0, total, error }
 
   // This week (Mon–Sun)
   const now = new Date()
