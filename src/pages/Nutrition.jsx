@@ -412,7 +412,14 @@ export default function Nutrition() {
                       className="w-full text-left flex justify-between items-center bg-zinc-950/50 p-3 rounded-xl border border-zinc-800/50 hover:border-zinc-700 hover:bg-zinc-950/70 transition"
                       title="Click to edit"
                     >
-                      <span className="font-medium text-sm">{m.name}</span>
+                      <div>
+                        <span className="font-medium text-sm">{m.name}</span>
+                        {m.created_at && (
+                          <span className="text-[10px] text-zinc-600 ml-2">
+                            {new Date(m.created_at).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-right">
                         <div className="text-xs text-zinc-400 font-bold">{m.calories} cal</div>
                         <div className="text-[11px] text-zinc-600">
