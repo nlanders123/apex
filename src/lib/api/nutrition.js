@@ -165,40 +165,39 @@ export async function deleteMeal(userId, mealId) {
 }
 
 export async function copyYesterdayMeals(userId, category) {
-  const today = new Date()
-  const yesterday = new Date(today)
+  const yesterday = new Date()
   yesterday.setDate(yesterday.getDate() - 1)
+  return copyMealsFromDate(userId, category, isoDate(yesterday), isoDate(new Date()))
+}
 
-  const todayStr = isoDate(today)
-  const yStr = isoDate(yesterday)
-
-  // Find yesterday's log
-  const { data: yLog, error: yErr } = await supabase
+export async function copyMealsFromDate(userId, category, fromDateStr, toDateStr) {
+  // Find source day's log
+  const { data: srcLog, error: srcErr } = await supabase
     .from('daily_logs')
     .select('id')
     .eq('user_id', userId)
-    .eq('date', yStr)
+    .eq('date', fromDateStr)
     .maybeSingle()
 
-  if (yErr) return { error: yErr }
-  if (!yLog) return { error: { message: 'No meals found for yesterday.' } }
+  if (srcErr) return { error: srcErr }
+  if (!srcLog) return { error: { message: `No meals found for ${fromDateStr}.` } }
 
-  // Get yesterday's meals for this category
-  const { data: yMeals, error: yMealsErr } = await supabase
+  // Get source meals for this category
+  const { data: srcMeals, error: mealsErr } = await supabase
     .from('logged_meals')
     .select('*')
-    .eq('daily_log_id', yLog.id)
+    .eq('daily_log_id', srcLog.id)
     .eq('category', category)
 
-  if (yMealsErr) return { error: yMealsErr }
-  if (!yMeals?.length) return { error: { message: `No ${category} meals found for yesterday.` } }
+  if (mealsErr) return { error: mealsErr }
+  if (!srcMeals?.length) return { error: { message: `No ${category} meals found for ${fromDateStr}.` } }
 
-  // Ensure today's log exists
-  const { data: tLog, error: tErr } = await ensureDailyLog(userId, todayStr)
+  // Ensure target day's log exists
+  const { data: tLog, error: tErr } = await ensureDailyLog(userId, toDateStr)
   if (tErr) return { error: tErr }
 
   // Copy meals
-  const inserts = yMeals.map((m) => ({
+  const inserts = srcMeals.map((m) => ({
     daily_log_id: tLog.id,
     user_id: userId,
     name: m.name,
@@ -207,10 +206,40 @@ export async function copyYesterdayMeals(userId, category) {
     protein: m.protein,
     fat: m.fat,
     carbs: m.carbs,
+    fiber: m.fiber || 0,
+    sodium: m.sodium || 0,
+    sugar: m.sugar || 0,
   }))
 
   const { error: insErr } = await supabase.from('logged_meals').insert(inserts)
   return { error: insErr }
+}
+
+// Get recent dates that have meals for a given category (for copy picker)
+export async function getRecentDatesWithMeals(userId, category, limit = 7) {
+  const { data, error } = await supabase
+    .from('logged_meals')
+    .select('created_at')
+    .eq('user_id', userId)
+    .eq('category', category)
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (error || !data?.length) return { data: [], error }
+
+  // Extract unique dates
+  const seen = new Set()
+  const dates = []
+  for (const m of data) {
+    const dateStr = m.created_at.split('T')[0]
+    if (!seen.has(dateStr)) {
+      seen.add(dateStr)
+      dates.push(dateStr)
+    }
+    if (dates.length >= limit) break
+  }
+
+  return { data: dates, error: null }
 }
 
 // --- Weekly Summary ---

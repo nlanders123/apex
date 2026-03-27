@@ -3,7 +3,7 @@ import { Plus, Copy, ChevronLeft, ChevronRight, Droplets, ChefHat, BarChart3 } f
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { getProfile, updateTargets } from '../lib/api/profile'
-import { getMealsForDate, copyYesterdayMeals, addWater, getWeekSummary } from '../lib/api/nutrition'
+import { getMealsForDate, copyMealsFromDate, getRecentDatesWithMeals, addWater, getWeekSummary } from '../lib/api/nutrition'
 import MealLoggerModal from '../components/MealLoggerModal'
 import RecipeBuilderModal from '../components/RecipeBuilderModal'
 
@@ -50,6 +50,8 @@ export default function Nutrition() {
   const [recipeMealType, setRecipeMealType] = useState('Dinner')
   const [weekSummary, setWeekSummary] = useState(null)
   const [showWeekly, setShowWeekly] = useState(false)
+  const [copyPickerFor, setCopyPickerFor] = useState(null) // meal category label or null
+  const [copyDates, setCopyDates] = useState([])
 
   const isToday = selectedDate === isoDate(new Date())
 
@@ -118,16 +120,30 @@ export default function Nutrition() {
     setIsEditingTargets(false)
   }
 
-  const handleCopyYesterday = async (mealLabel) => {
+  const handleOpenCopyPicker = async (mealLabel) => {
     const category = labelToEnum(mealLabel)
-    const { error } = await copyYesterdayMeals(user.id, category)
+    const { data: dates } = await getRecentDatesWithMeals(user.id, category)
+    // Filter out the currently selected date
+    const filtered = dates.filter((d) => d !== selectedDate)
+    if (filtered.length === 0) {
+      toast('No previous meals to copy', 'info')
+      return
+    }
+    setCopyDates(filtered)
+    setCopyPickerFor(mealLabel)
+  }
+
+  const handleCopyFromDate = async (fromDate) => {
+    const category = labelToEnum(copyPickerFor)
+    const { error } = await copyMealsFromDate(user.id, category, fromDate, selectedDate)
+    setCopyPickerFor(null)
 
     if (error) {
-      console.error(error)
       toast(error.message, 'error')
       return
     }
 
+    toast(`Copied ${copyPickerFor} from ${formatDateLabel(fromDate)}`, 'success')
     await fetchMeals()
   }
 
@@ -355,16 +371,14 @@ export default function Nutrition() {
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {isToday && (
-                    <button
-                      onClick={() => handleCopyYesterday(mealLabel)}
-                      className="flex items-center gap-1 text-xs font-bold text-zinc-300 bg-zinc-800 px-2.5 py-1.5 rounded-lg hover:bg-zinc-700 transition"
-                      title="Copy yesterday"
-                    >
-                      <Copy size={14} />
-                      Copy
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleOpenCopyPicker(mealLabel)}
+                    className="flex items-center gap-1 text-xs font-bold text-zinc-300 bg-zinc-800 px-2.5 py-1.5 rounded-lg hover:bg-zinc-700 transition"
+                    title="Copy from another day"
+                  >
+                    <Copy size={14} />
+                    Copy
+                  </button>
                   <button
                     onClick={() => { setRecipeMealType(mealLabel); setRecipeModalOpen(true) }}
                     className="flex items-center gap-1 text-xs font-bold text-zinc-300 bg-zinc-800 px-2.5 py-1.5 rounded-lg hover:bg-zinc-700 transition"
@@ -409,6 +423,33 @@ export default function Nutrition() {
           )
         })}
       </div>
+
+      {/* Copy from date picker */}
+      {copyPickerFor && (
+        <div className="fixed inset-0 bg-black/60 flex items-end justify-center z-50" onClick={() => setCopyPickerFor(null)}>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-t-2xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-bold text-lg mb-1">Copy {copyPickerFor}</h3>
+            <p className="text-xs text-zinc-500 mb-4">Pick a day to copy from</p>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {copyDates.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => handleCopyFromDate(d)}
+                  className="w-full text-left bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 hover:border-zinc-600 transition"
+                >
+                  {formatDateLabel(d)}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setCopyPickerFor(null)}
+              className="w-full mt-3 text-sm text-zinc-500 hover:text-white transition py-2"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       <MealLoggerModal
         isOpen={!!activeModalMealType}
