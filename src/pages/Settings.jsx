@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { getProfile, updateProfile, updateTargets, calculateTargets } from '../lib/api/profile'
+import { exportMeals, exportWorkouts, exportWeight } from '../lib/api/export'
 import { supabase } from '../lib/supabase'
-import { Calculator, LogOut } from 'lucide-react'
+import { Calculator, LogOut, Download } from 'lucide-react'
 
 const ACTIVITY_LABELS = {
   sedentary: 'Sedentary (desk job, little exercise)',
@@ -348,6 +349,33 @@ export default function Settings() {
           >
             Apply calculated targets
           </button>
+        </div>
+      </div>
+
+      {/* Data Export */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 mb-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Download size={16} className="text-zinc-400" />
+          <div className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Export Data</div>
+        </div>
+        <div className="space-y-2">
+          {[
+            { label: 'Meals (CSV)', fn: () => exportMeals(user.id) },
+            { label: 'Workouts (CSV)', fn: () => exportWorkouts(user.id) },
+            { label: 'Body Weight (CSV)', fn: () => exportWeight(user.id) },
+          ].map(({ label, fn }) => (
+            <button
+              key={label}
+              onClick={async () => {
+                const { count, error } = await fn()
+                if (error) toast(error.message, 'error')
+                else toast(`Exported ${count} rows`, 'success')
+              }}
+              className="w-full text-left bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-300 hover:border-zinc-600 transition"
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
