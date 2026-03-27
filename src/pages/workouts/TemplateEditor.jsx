@@ -2,13 +2,13 @@ import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import {
+  getTemplate,
   getTemplateExercises,
   addTemplateExercise,
   removeTemplateExercise,
   startSession,
 } from '../../lib/api/workouts'
 import { searchExercises, findExerciseByName } from '../../lib/api/exercises'
-import { supabase } from '../../lib/supabase'
 import { ArrowLeft, Plus, Play, Search } from 'lucide-react'
 import { useToast } from '../../components/Toast'
 
@@ -38,12 +38,7 @@ export default function TemplateEditor() {
   }, [id])
 
   const fetchTemplate = async () => {
-    const { data, error } = await supabase
-      .from('workout_templates')
-      .select('*')
-      .eq('id', id)
-      .eq('user_id', user.id)
-      .single()
+    const { data, error } = await getTemplate(user.id, id)
     if (error) throw error
     setTemplate(data)
   }

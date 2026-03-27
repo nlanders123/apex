@@ -1,6 +1,7 @@
 # CLAUDE.md — Apex
 
 > AI coding context file. Read by Claude Code, Codex, Cursor, and other AI dev tools.
+> **Before writing code, read `docs/ENGINEERING.md`** — it has the dev protocol and session logging requirements.
 > For product details see `docs/PRD.md`. For architecture see `docs/ARCHITECTURE.md`.
 
 ## What Is Apex
@@ -37,8 +38,11 @@ apex/
 │   │   ├── supabase.js      # Supabase client init
 │   │   └── api/             # Data layer (all Supabase calls)
 │   │       ├── nutrition.js  # Meal & daily log operations
-│   │       ├── workouts.js   # Template, session, set operations
-│   │       └── profile.js    # Profile CRUD
+│   │       ├── workouts.js   # Template, session, set, progressive overload
+│   │       ├── exercises.js  # Exercise library search & CRUD
+│   │       ├── food.js       # Open Food Facts integration
+│   │       ├── weight.js     # Body weight tracking
+│   │       └── profile.js    # Profile & targets
 │   ├── contexts/
 │   │   └── AuthContext.jsx   # Auth state provider
 │   ├── components/           # Reusable UI components
@@ -51,6 +55,21 @@ apex/
 ├── README.md                 # Setup guide
 └── CONTRIBUTING.md           # How to work on this project
 ```
+
+## Design Principles
+
+### API-Readiness
+Everything we build should be structured so a public REST API can be added later without refactoring. This means:
+
+- **Data layer separation is mandatory** — all data operations go through `src/lib/api/`, never direct Supabase calls from components. These functions become the future API's business logic.
+- **RLS is your API auth** — every table must have row-level security scoped to `auth.uid()`. When we expose the Supabase PostgREST API, RLS policies *are* the access control.
+- **Clean, consistent schema** — table and column names should be self-documenting. No abbreviations, no inconsistent casing. The schema will become a public contract.
+- **Foreign keys and constraints** — enforce data integrity at the database level, not in application code. API consumers won't have our validation logic.
+- **Stateless operations** — API functions should not depend on React state or UI context. They take inputs, hit the database, return results.
+- **Error handling at the boundary** — API functions return `{ data, error }`. No throwing, no UI-specific error handling inside data functions.
+- **Migrations are the source of truth** — every schema change goes through `supabase migration new`. No ad-hoc SQL in production. API consumers need a stable, versioned schema.
+
+We are NOT building the API now. We are building in a way that makes adding one trivial when the time comes.
 
 ## Coding Conventions
 
@@ -97,10 +116,10 @@ apex/
 
 ## Current Status
 
-**Version:** 0.1.0 (MVP foundation)
-**What works:** Auth, nutrition logging, workout templates + session logging
-**What's in progress:** Data layer refactor, exercise library, progressive overload
-**What's next:** See `docs/PRD.md` for roadmap
+**Version:** 0.2.0 (Daily Driver)
+**Phase 1 (MVP) complete:** Auth, nutrition (quick-add, barcode scan, food search, saved meals, recipe builder, water, micronutrients, weekly averages), workout templates + session logging, exercise library (~140 seeded), progressive overload with history charts, body weight tracking, dashboard, PWA, MCP server (4 nutrition tools), error boundaries
+**Phase 2 (Daily Driver) in progress:** Workout timer + finish flow, session completion summary, recent meals quick-log, workout/exercise notes
+**What's next:** See `docs/PRD.md` for full phased roadmap
 
 ## Local Development
 

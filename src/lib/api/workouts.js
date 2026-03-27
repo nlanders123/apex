@@ -34,6 +34,17 @@ export async function deleteTemplate(userId, templateId) {
   return { error }
 }
 
+export async function getTemplate(userId, templateId) {
+  const { data, error } = await supabase
+    .from('workout_templates')
+    .select('*')
+    .eq('id', templateId)
+    .eq('user_id', userId)
+    .single()
+
+  return { data, error }
+}
+
 // ==========================================
 // TEMPLATE EXERCISES
 // ==========================================
@@ -192,6 +203,53 @@ export async function updateSet(userId, setId, patch) {
     .eq('user_id', userId)
 
   return { data, error }
+}
+
+// ==========================================
+// SESSION FINISH + NOTES
+// ==========================================
+
+export async function finishSession(userId, sessionId) {
+  // Fetch session to calculate duration from start time
+  const { data: session, error: fetchErr } = await supabase
+    .from('workout_sessions')
+    .select('date')
+    .eq('id', sessionId)
+    .eq('user_id', userId)
+    .single()
+
+  if (fetchErr || !session) return { error: fetchErr }
+
+  const startTime = new Date(session.date).getTime()
+  const durationMinutes = Math.round((Date.now() - startTime) / 60000)
+
+  const { error } = await supabase
+    .from('workout_sessions')
+    .update({ duration_minutes: durationMinutes })
+    .eq('id', sessionId)
+    .eq('user_id', userId)
+
+  return { durationMinutes, error }
+}
+
+export async function updateSessionNotes(userId, sessionId, notes) {
+  const { error } = await supabase
+    .from('workout_sessions')
+    .update({ notes })
+    .eq('id', sessionId)
+    .eq('user_id', userId)
+
+  return { error }
+}
+
+export async function updateExerciseNotes(userId, exerciseId, notes) {
+  const { error } = await supabase
+    .from('logged_exercises')
+    .update({ notes })
+    .eq('id', exerciseId)
+    .eq('user_id', userId)
+
+  return { error }
 }
 
 // ==========================================

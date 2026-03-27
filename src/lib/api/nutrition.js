@@ -277,6 +277,37 @@ export async function getWeekSummary(userId, dateStr) {
   return { days: daySummaries, averages, error: null }
 }
 
+// --- Recent Meals ---
+
+export async function getRecentMeals(userId, category, limit = 10) {
+  // Get meals from the last 14 days for this category, deduplicated by name
+  const cutoff = new Date()
+  cutoff.setDate(cutoff.getDate() - 14)
+
+  const { data, error } = await supabase
+    .from('logged_meals')
+    .select('name, protein, fat, carbs, calories, fiber, sodium, sugar, created_at')
+    .eq('user_id', userId)
+    .eq('category', category)
+    .gte('created_at', cutoff.toISOString())
+    .order('created_at', { ascending: false })
+
+  if (error || !data?.length) return { data: [], error }
+
+  // Deduplicate by name — keep the most recent instance of each
+  const seen = new Set()
+  const unique = []
+  for (const meal of data) {
+    if (!seen.has(meal.name)) {
+      seen.add(meal.name)
+      unique.push(meal)
+    }
+    if (unique.length >= limit) break
+  }
+
+  return { data: unique, error: null }
+}
+
 // --- Saved Meals ---
 
 export async function getSavedMeals(userId) {

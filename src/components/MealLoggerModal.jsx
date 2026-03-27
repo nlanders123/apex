@@ -10,6 +10,7 @@ import {
   saveMeal,
   logSavedMeal,
   deleteSavedMeal,
+  getRecentMeals,
 } from '../lib/api/nutrition'
 import { lookupBarcode, searchFood } from '../lib/api/food'
 import BarcodeScanner from './BarcodeScanner'
@@ -31,6 +32,7 @@ export default function MealLoggerModal({
   const [loading, setLoading] = useState(false)
   const [view, setView] = useState('pick') // 'pick' | 'form' | 'search' | 'scanner'
   const [savedMeals, setSavedMeals] = useState([])
+  const [recentMeals, setRecentMeals] = useState([])
   const [savedLoading, setSavedLoading] = useState(false)
   const [formData, setForm] = useState({
     name: 'Quick Add',
@@ -73,10 +75,14 @@ export default function MealLoggerModal({
 
   async function loadSavedMeals() {
     setSavedLoading(true)
-    const { data } = await getSavedMeals(user.id)
-    const filtered = data.filter((m) => m.category === category)
+    const [savedResult, recentResult] = await Promise.all([
+      getSavedMeals(user.id),
+      getRecentMeals(user.id, category),
+    ])
+    const filtered = savedResult.data.filter((m) => m.category === category)
     setSavedMeals(filtered)
-    setView(filtered.length > 0 ? 'pick' : 'form')
+    setRecentMeals(recentResult.data || [])
+    setView(filtered.length > 0 || recentResult.data?.length > 0 ? 'pick' : 'form')
     setSavedLoading(false)
   }
 
@@ -140,6 +146,30 @@ export default function MealLoggerModal({
     } catch (error) {
       console.error('Error deleting meal:', error)
       toast(error?.message || 'Failed to delete meal', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleLogRecent = async (meal) => {
+    setLoading(true)
+    try {
+      const { error } = await logMeal(user.id, {
+        category,
+        name: meal.name,
+        protein: meal.protein || 0,
+        fat: meal.fat || 0,
+        carbs: meal.carbs || 0,
+        fiber: meal.fiber || 0,
+        sodium: meal.sodium || 0,
+        sugar: meal.sugar || 0,
+      }, selectedDate)
+      if (error) throw error
+      onLogSuccess()
+      onClose()
+    } catch (error) {
+      console.error('Error logging recent meal:', error)
+      toast(error?.message || 'Failed to log meal', 'error')
     } finally {
       setLoading(false)
     }
@@ -356,29 +386,59 @@ export default function MealLoggerModal({
           {savedLoading ? (
             <div className="text-zinc-500 text-sm py-4">Loading...</div>
           ) : (
-            <div className="space-y-2 max-h-60 overflow-y-auto mb-4">
-              {savedMeals.map((meal) => (
-                <button
-                  key={meal.id}
-                  onClick={() => handleLogSaved(meal)}
-                  disabled={loading}
-                  className="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 hover:bg-zinc-950/70 transition text-left disabled:opacity-50"
-                >
-                  <div>
-                    <div className="text-white font-medium text-sm">{meal.name}</div>
-                    <div className="text-zinc-500 text-xs mt-0.5">
-                      {meal.calories} cal · {meal.protein}P · {meal.fat}F · {meal.carbs}C
-                    </div>
+            <div className="max-h-60 overflow-y-auto mb-4 space-y-3">
+              {/* Recent meals */}
+              {recentMeals.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold text-zinc-500 mb-1.5 px-1">Recent</div>
+                  <div className="space-y-2">
+                    {recentMeals.map((meal, i) => (
+                      <button
+                        key={`recent-${i}`}
+                        onClick={() => handleLogRecent(meal)}
+                        disabled={loading}
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 hover:bg-zinc-950/70 transition text-left disabled:opacity-50"
+                      >
+                        <div className="text-white font-medium text-sm">{meal.name}</div>
+                        <div className="text-zinc-500 text-xs mt-0.5">
+                          {meal.calories} cal · {meal.protein}P · {meal.fat}F · {meal.carbs}C
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                  <button
-                    onClick={(e) => handleDeleteSaved(e, meal)}
-                    className="p-1.5 text-zinc-600 hover:text-red-400 transition"
-                    title="Remove saved meal"
-                  >
-                    <X size={14} />
-                  </button>
-                </button>
-              ))}
+                </div>
+              )}
+
+              {/* Saved meals */}
+              {savedMeals.length > 0 && (
+                <div>
+                  <div className="text-xs font-bold text-zinc-500 mb-1.5 px-1">Saved</div>
+                  <div className="space-y-2">
+                    {savedMeals.map((meal) => (
+                      <button
+                        key={meal.id}
+                        onClick={() => handleLogSaved(meal)}
+                        disabled={loading}
+                        className="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 hover:bg-zinc-950/70 transition text-left disabled:opacity-50"
+                      >
+                        <div>
+                          <div className="text-white font-medium text-sm">{meal.name}</div>
+                          <div className="text-zinc-500 text-xs mt-0.5">
+                            {meal.calories} cal · {meal.protein}P · {meal.fat}F · {meal.carbs}C
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => handleDeleteSaved(e, meal)}
+                          className="p-1.5 text-zinc-600 hover:text-red-400 transition"
+                          title="Remove saved meal"
+                        >
+                          <X size={14} />
+                        </button>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
