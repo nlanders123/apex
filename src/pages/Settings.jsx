@@ -159,7 +159,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white p-6 pb-24">
+    <div className="min-h-screen bg-zinc-950 text-white px-4 py-6 pb-24 overflow-x-hidden max-w-lg mx-auto">
       <h1 className="text-3xl font-bold tracking-tight mb-6">Settings</h1>
 
       {/* Account */}

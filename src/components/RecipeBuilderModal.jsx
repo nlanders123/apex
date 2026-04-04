@@ -3,7 +3,8 @@ import { X, Plus, Search, ScanBarcode, Trash2, ChevronLeft } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from './Toast'
 import { logMeal, saveMeal } from '../lib/api/nutrition'
-import { searchFood, lookupBarcode } from '../lib/api/food'
+import { searchFood, searchFoodUSDA, lookupBarcode } from '../lib/api/food'
+import { searchCommonFoods } from '../lib/common-foods'
 import BarcodeScanner from './BarcodeScanner'
 
 export default function RecipeBuilderModal({ isOpen, onClose, mealType, onLogSuccess, selectedDate = null }) {
@@ -75,8 +76,25 @@ export default function RecipeBuilderModal({ isOpen, onClose, mealType, onLogSuc
     e.preventDefault()
     if (!searchQuery.trim()) return
     setSearching(true)
-    const { data } = await searchFood(searchQuery.trim())
-    setSearchResults(data)
+    const query = searchQuery.trim()
+    const localResults = searchCommonFoods(query)
+    setSearchResults(localResults)
+    const localNames = new Set(localResults.map(r => r.name.toLowerCase()))
+    try {
+      const [usdaResult, offResult] = await Promise.allSettled([
+        searchFoodUSDA(query),
+        searchFood(query),
+      ])
+      const usdaData = usdaResult.status === 'fulfilled' ? (usdaResult.value.data || []) : []
+      const offData = offResult.status === 'fulfilled' ? (offResult.value.data || []) : []
+      const seen = new Set(localNames)
+      const apiResults = []
+      for (const item of [...usdaData, ...offData]) {
+        const key = item.name.toLowerCase()
+        if (!seen.has(key)) { seen.add(key); apiResults.push(item) }
+      }
+      if (apiResults.length) setSearchResults([...localResults, ...apiResults])
+    } catch (_) {}
     setSearching(false)
   }
 

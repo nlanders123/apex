@@ -1,4 +1,4 @@
-const CACHE_NAME = "apex-v6";
+const CACHE_NAME = "apex-v8";
 
 const SHELL_ASSETS = [
   "./manifest.json",

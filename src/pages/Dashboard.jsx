@@ -97,7 +97,7 @@ export default function Dashboard() {
   const proteinPercent = proteinTarget > 0 ? Math.min(100, Math.round((todayTotals.protein / proteinTarget) * 100)) : 0
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white p-6 pb-24">
+    <div className="min-h-screen bg-zinc-950 text-white px-4 py-6 pb-24 overflow-x-hidden max-w-lg mx-auto">
       <header className="mb-8">
         <h1 className="text-2xl font-bold">Apex</h1>
         <p className="text-zinc-500 text-sm">
@@ -151,15 +151,15 @@ export default function Dashboard() {
       </button>
 
       {/* Quick actions */}
-      <div className="grid grid-cols-4 gap-2 mb-4">
-        {['Breakfast', 'Lunch', 'Dinner', 'Snacks'].map((label) => (
+      <div className="grid grid-cols-3 gap-2 mb-4">
+        {[1, 2, 3].map((n) => (
           <button
-            key={label}
-            onClick={() => nav(`/nutrition?add=${label.toLowerCase()}`)}
+            key={n}
+            onClick={() => nav(`/nutrition?add=meal_${n}`)}
             className="bg-zinc-900 border border-zinc-800 rounded-xl py-3 text-center hover:bg-zinc-800/50 transition active:scale-95"
           >
             <Plus size={14} className="mx-auto text-zinc-400 mb-1" />
-            <div className="text-[10px] font-bold text-zinc-500">{label}</div>
+            <div className="text-[10px] font-bold text-zinc-500">Meal {n}</div>
           </button>
         ))}
       </div>

@@ -12,11 +12,15 @@ import {
   deleteSavedMeal,
   getRecentMeals,
 } from '../lib/api/nutrition'
-import { lookupBarcode, searchFood } from '../lib/api/food'
+import { lookupBarcode, searchFood, searchFoodUSDA } from '../lib/api/food'
+import { searchCommonFoods } from '../lib/common-foods'
 import BarcodeScanner from './BarcodeScanner'
 
-function toMealEnum(mealTypeLabel) {
-  return mealTypeLabel.toLowerCase() === 'snacks' ? 'snack' : mealTypeLabel.toLowerCase()
+function formatMealLabel(key) {
+  if (!key) return ''
+  // "meal_1" → "Meal 1", or pass through anything else
+  if (key.startsWith('meal_')) return `Meal ${key.split('_')[1]}`
+  return key.charAt(0).toUpperCase() + key.slice(1)
 }
 
 export default function MealLoggerModal({
@@ -57,7 +61,7 @@ export default function MealLoggerModal({
   const [quantity, setQuantity] = useState(1)
 
   const isEdit = !!existingMeal
-  const category = toMealEnum(mealType)
+  const category = mealType
 
   useEffect(() => {
     if (!isOpen) return
@@ -291,10 +295,35 @@ export default function MealLoggerModal({
 
   const handleFoodSearch = async (e) => {
     e.preventDefault()
-    if (!searchQuery.trim()) return
+    const query = searchQuery.trim()
+    if (!query) return
     setSearching(true)
-    const { data } = await searchFood(searchQuery.trim())
-    setSearchResults(data)
+    setSearchResults([])
+    // Show local common foods instantly
+    const localResults = searchCommonFoods(query)
+    setSearchResults(localResults)
+    // Then fetch from USDA (primary) and OFF (fallback)
+    const localNames = new Set(localResults.map(r => r.name.toLowerCase()))
+    try {
+      const [usdaResult, offResult] = await Promise.allSettled([
+        searchFoodUSDA(query),
+        searchFood(query),
+      ])
+      const usdaData = usdaResult.status === 'fulfilled' ? (usdaResult.value.data || []) : []
+      const offData = offResult.status === 'fulfilled' ? (offResult.value.data || []) : []
+      const seen = new Set(localNames)
+      const apiResults = []
+      for (const item of [...usdaData, ...offData]) {
+        const key = item.name.toLowerCase()
+        if (!seen.has(key)) {
+          seen.add(key)
+          apiResults.push(item)
+        }
+      }
+      if (apiResults.length) {
+        setSearchResults([...localResults, ...apiResults])
+      }
+    } catch (_) {}
     setSearching(false)
   }
 
@@ -522,7 +551,7 @@ export default function MealLoggerModal({
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className="w-full max-w-md bg-zinc-900 rounded-t-3xl sm:rounded-2xl border border-zinc-800 shadow-2xl p-6">
           <div className="flex justify-between items-center mb-5">
-            <h2 className="text-xl font-bold">Add to {mealType}</h2>
+            <h2 className="text-xl font-bold">Add to {formatMealLabel(mealType)}</h2>
             <button
               type="button"
               onClick={onClose}

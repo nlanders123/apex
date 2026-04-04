@@ -1,7 +1,10 @@
 import { supabase } from '../supabase'
 
 function isoDate(d) {
-  return d.toISOString().split('T')[0]
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 // Get or create today's daily log
@@ -241,28 +244,32 @@ export async function copyMealsFromDate(userId, category, fromDateStr, toDateStr
 }
 
 // Get recent dates that have meals for a given category (for copy picker)
-export async function getRecentDatesWithMeals(userId, category, limit = 7) {
+export async function getRecentDatesWithMeals(userId, category, limit = 14) {
+  // Join through daily_logs to get the actual log date (not created_at)
   const { data, error } = await supabase
     .from('logged_meals')
-    .select('created_at')
+    .select('daily_log_id, daily_logs!inner(date)')
     .eq('user_id', userId)
     .eq('category', category)
     .order('created_at', { ascending: false })
-    .limit(200)
+    .limit(500)
 
   if (error || !data?.length) return { data: [], error }
 
-  // Extract unique dates
+  // Extract unique dates from the daily_log.date field
   const seen = new Set()
   const dates = []
   for (const m of data) {
-    const dateStr = m.created_at.split('T')[0]
-    if (!seen.has(dateStr)) {
+    const dateStr = m.daily_logs?.date
+    if (dateStr && !seen.has(dateStr)) {
       seen.add(dateStr)
       dates.push(dateStr)
     }
     if (dates.length >= limit) break
   }
+
+  // Sort descending (most recent first)
+  dates.sort((a, b) => b.localeCompare(a))
 
   return { data: dates, error: null }
 }
@@ -415,6 +422,64 @@ export async function deleteSavedMeal(userId, mealId) {
     .eq('user_id', userId)
 
   return { error }
+}
+
+// --- Nutrition History (for trends chart) ---
+
+export async function getNutritionHistory(userId, days = 7) {
+  // Build date range
+  const dates = []
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date()
+    d.setDate(d.getDate() - i)
+    dates.push(isoDate(d))
+  }
+
+  const { data: logs, error: logErr } = await supabase
+    .from('daily_logs')
+    .select('id, date, water_ml')
+    .eq('user_id', userId)
+    .in('date', dates)
+
+  if (logErr) return { data: [], error: logErr }
+  if (!logs?.length) return { data: [], error: null }
+
+  const logIds = logs.map((l) => l.id)
+  const { data: meals, error: mealsErr } = await supabase
+    .from('logged_meals')
+    .select('daily_log_id, calories, protein, fat, carbs')
+    .in('daily_log_id', logIds)
+
+  if (mealsErr) return { data: [], error: mealsErr }
+
+  // Build per-day totals
+  const mealsByLog = {}
+  for (const m of meals ?? []) {
+    mealsByLog[m.daily_log_id] = mealsByLog[m.daily_log_id] || []
+    mealsByLog[m.daily_log_id].push(m)
+  }
+
+  const logByDate = {}
+  for (const log of logs) {
+    logByDate[log.date] = log
+  }
+
+  // Return all dates in range, zero-filled for days with no data
+  const result = dates.map((date) => {
+    const log = logByDate[date]
+    if (!log) return { date, calories: 0, protein: 0, fat: 0, carbs: 0, hasData: false }
+    const dayMeals = mealsByLog[log.id] || []
+    return {
+      date,
+      calories: dayMeals.reduce((s, m) => s + (m.calories || 0), 0),
+      protein: dayMeals.reduce((s, m) => s + (m.protein || 0), 0),
+      fat: dayMeals.reduce((s, m) => s + (m.fat || 0), 0),
+      carbs: dayMeals.reduce((s, m) => s + (m.carbs || 0), 0),
+      hasData: true,
+    }
+  })
+
+  return { data: result, error: null }
 }
 
 export async function logSavedMeal(userId, savedMeal, dateStr, quantity = 1) {

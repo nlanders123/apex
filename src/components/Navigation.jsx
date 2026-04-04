@@ -4,7 +4,7 @@ import { Home, Dumbbell, UtensilsCrossed, Settings } from 'lucide-react'
 const tabs = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/workouts', icon: Dumbbell, label: 'Workout' },
-  { to: '/nutrition', icon: UtensilsCrossed, label: 'Food' },
+  { to: '/nutrition', icon: UtensilsCrossed, label: 'Nutrition' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 

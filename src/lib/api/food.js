@@ -1,4 +1,6 @@
 const OFF_BASE = 'https://world.openfoodfacts.org/api/v2'
+const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1'
+const USDA_KEY = 'DEMO_KEY' // Free USDA FoodData Central API key
 
 /**
  * Look up a food product by barcode using Open Food Facts.
@@ -96,6 +98,52 @@ export async function searchFood(query, limit = 10) {
         calcium: Math.round((n['calcium_serving'] ?? n['calcium_100g'] ?? 0) * 1000),
         iron: Math.round((n['iron_serving'] ?? n['iron_100g'] ?? 0) * 1000),
         servingSize: p.serving_size || '100g',
+      }
+    })
+
+    return { data: products, error: null }
+  } catch (err) {
+    return { data: [], error: err.message }
+  }
+}
+
+/**
+ * Search USDA FoodData Central — free, reliable, comprehensive.
+ * Uses Survey (FNDDS) data for common foods with per-serving macros.
+ */
+export async function searchFoodUSDA(query, limit = 10) {
+  try {
+    const res = await fetch(
+      `${USDA_BASE}/foods/search?query=${encodeURIComponent(query)}&pageSize=${limit}&api_key=${USDA_KEY}&dataType=Survey%20(FNDDS)`
+    )
+    if (!res.ok) return { data: [], error: `USDA API ${res.status}` }
+
+    const json = await res.json()
+    const products = (json.foods || []).map((food) => {
+      const nutrients = {}
+      for (const n of food.foodNutrients || []) {
+        nutrients[n.nutrientName] = n.value
+      }
+
+      return {
+        name: food.description,
+        calories: Math.round(nutrients['Energy'] || 0),
+        protein: Math.round(nutrients['Protein'] || 0),
+        fat: Math.round(nutrients['Total lipid (fat)'] || 0),
+        carbs: Math.round(nutrients['Carbohydrate, by difference'] || 0),
+        fiber: Math.round(nutrients['Fiber, total dietary'] || 0),
+        sugar: Math.round(nutrients['Sugars, total including NLEA'] || nutrients['Total Sugars'] || 0),
+        sodium: Math.round(nutrients['Sodium, Na'] || 0),
+        saturated_fat: Math.round(nutrients['Fatty acids, total saturated'] || 0),
+        cholesterol: Math.round(nutrients['Cholesterol'] || 0),
+        potassium: Math.round(nutrients['Potassium, K'] || 0),
+        calcium: Math.round(nutrients['Calcium, Ca'] || 0),
+        iron: Math.round(nutrients['Iron, Fe'] || 0),
+        vitamin_a: Math.round(nutrients['Vitamin A, RAE'] || 0),
+        vitamin_c: Math.round(nutrients['Vitamin C, total ascorbic acid'] || 0),
+        trans_fat: 0,
+        servingSize: '100g',
+        source: 'usda',
       }
     })
 
