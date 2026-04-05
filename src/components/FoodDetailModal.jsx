@@ -1,7 +1,9 @@
-import { X, Shield, Leaf, FlaskConical, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
-import { useState } from 'react'
+import { X, Leaf, FlaskConical, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { searchAlternatives } from '../lib/api/food'
 import { ScoreCircle, NutriScorePill, NovaPill } from './FoodHealthBadge'
 import {
+  calculateHealthScore,
   GRADE_LABELS,
   GRADE_COLORS,
   NUTRI_SCORE_COLORS,
@@ -19,6 +21,28 @@ import { RISK_LABELS, RISK_COLORS, RISK_BG_COLORS } from '../lib/additive-risks'
 export default function FoodDetailModal({ isOpen, onClose, health, food }) {
   const [showAdditives, setShowAdditives] = useState(true)
   const [showIngredients, setShowIngredients] = useState(false)
+  const [alternatives, setAlternatives] = useState([])
+  const [altLoading, setAltLoading] = useState(false)
+
+  // Fetch healthier alternatives when modal opens for a mediocre/poor product
+  useEffect(() => {
+    if (!isOpen || !food || !health) { setAlternatives([]); return }
+    // Only suggest alternatives for non-excellent products with category data
+    if (health.score >= 75 || !food.categories?.length) { setAlternatives([]); return }
+
+    let cancelled = false
+    setAltLoading(true)
+    // Use the most specific category (last in the array is usually most specific)
+    const cat = food.categories[food.categories.length - 1]
+    searchAlternatives(cat).then(({ data }) => {
+      if (cancelled) return
+      // Filter out the current product
+      const filtered = (data || []).filter((p) => p.name !== food.name)
+      setAlternatives(filtered)
+      setAltLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [isOpen, food?.name])
 
   if (!isOpen || !health || !food) return null
 
@@ -193,6 +217,47 @@ export default function FoodDetailModal({ isOpen, onClose, health, food }) {
               {showIngredients && (
                 <div className="px-4 pb-4">
                   <p className="text-xs text-zinc-400 leading-relaxed">{food.ingredients}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Healthier alternatives */}
+          {(alternatives.length > 0 || altLoading) && (
+            <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-4">
+              <div className="text-[10px] text-zinc-500 font-bold uppercase mb-3">
+                Healthier Alternatives
+              </div>
+              {altLoading ? (
+                <div className="text-xs text-zinc-600 py-2">Finding better options...</div>
+              ) : (
+                <div className="space-y-2">
+                  {alternatives.map((alt, i) => {
+                    const altHealth = calculateHealthScore({
+                      nutriScore: alt.nutriScore,
+                      novaGroup: alt.novaGroup,
+                      additives: alt.additives || [],
+                      labels: alt.labels || [],
+                    })
+                    const altColor = GRADE_COLORS[altHealth.grade]
+                    return (
+                      <div
+                        key={i}
+                        className="flex items-center gap-3 rounded-lg px-3 py-2.5 bg-zinc-900/50"
+                      >
+                        <ScoreCircle score={altHealth.score} color={altColor} size={32} />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium text-zinc-200 truncate">{alt.name}</div>
+                          <div className="text-[10px] text-zinc-500">
+                            {alt.calories} cal · {alt.protein}P · {alt.fat}F · {alt.carbs}C
+                          </div>
+                        </div>
+                        {alt.nutriScore && (
+                          <NutriScorePill grade={alt.nutriScore} />
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

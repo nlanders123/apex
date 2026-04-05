@@ -169,3 +169,49 @@ export async function searchFoodUSDA(query, limit = 10) {
     return { data: [], error: err.message }
   }
 }
+
+/**
+ * Search Open Food Facts for healthier alternatives in the same category.
+ * Returns products sorted by Nutri-Score (best first), filtered to score A or B.
+ */
+export async function searchAlternatives(categoryTag, limit = 6) {
+  if (!categoryTag) return { data: [], error: null }
+
+  try {
+    const cat = encodeURIComponent(categoryTag)
+    const res = await fetch(
+      `https://world.openfoodfacts.org/cgi/search.pl?tagtype_0=categories&tag_contains_0=contains&tag_0=${cat}&sort_by=nutriscore_score&page_size=${limit * 2}&json=1&fields=code,product_name,brands,nutriments,serving_size,nutrition_grades,nova_group,additives_tags,additives_n,labels_tags,categories_tags`
+    )
+    if (!res.ok) return { data: [], error: 'Network error' }
+
+    const json = await res.json()
+    const products = (json.products || [])
+      .filter((p) => {
+        const grade = (p.nutrition_grades || '').toLowerCase()
+        return grade === 'a' || grade === 'b'
+      })
+      .slice(0, limit)
+      .map((p) => {
+        const n = p.nutriments || {}
+        return {
+          barcode: p.code,
+          name: [p.brands, p.product_name].filter(Boolean).join(' — ') || 'Unknown',
+          calories: Math.round(n['energy-kcal_100g'] ?? 0),
+          protein: Math.round(n['proteins_100g'] ?? 0),
+          fat: Math.round(n['fat_100g'] ?? 0),
+          carbs: Math.round(n['carbohydrates_100g'] ?? 0),
+          servingSize: p.serving_size || '100g',
+          nutriScore: p.nutrition_grades || null,
+          novaGroup: p.nova_group || null,
+          additives: p.additives_tags || [],
+          additivesCount: p.additives_n || 0,
+          labels: p.labels_tags || [],
+          categories: p.categories_tags || [],
+        }
+      })
+
+    return { data: products, error: null }
+  } catch (err) {
+    return { data: [], error: err.message }
+  }
+}

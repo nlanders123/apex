@@ -9,6 +9,7 @@ import { useToast } from '../components/Toast'
 import { Utensils, Dumbbell, ChevronRight, Play, Scale, X, TrendingUp, TrendingDown, Droplets, Plus } from 'lucide-react'
 import { addWater } from '../lib/api/nutrition'
 import CalorieRing from '../components/CalorieRing'
+import DailyHealthScore from '../components/DailyHealthScore'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -129,6 +130,11 @@ export default function Dashboard() {
           compact
         />
       </button>
+
+      {/* Daily health score */}
+      <div className="mb-4">
+        <DailyHealthScore selectedDate={new Date().toLocaleDateString('en-CA')} />
+      </div>
 
       {/* Quick actions */}
       <div className="grid grid-cols-3 gap-2 mb-4">

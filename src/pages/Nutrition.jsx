@@ -9,6 +9,7 @@ import MealLoggerModal from '../components/MealLoggerModal'
 import RecipeBuilderModal from '../components/RecipeBuilderModal'
 import NutritionTrendsChart from '../components/NutritionTrendsChart'
 import CaloriePlanManager from '../components/CaloriePlanManager'
+import DailyHealthScore from '../components/DailyHealthScore'
 
 const DEFAULT_MEAL_COUNT = 6
 const WATER_INCREMENTS = [250, 500]
@@ -468,6 +469,11 @@ export default function Nutrition() {
           </button>
         </form>
       )}
+
+      {/* ─── DAILY HEALTH SCORE ─── */}
+      <div className="px-4 py-3 border-b border-zinc-800">
+        <DailyHealthScore selectedDate={selectedDate} />
+      </div>
 
       {/* ─── MEAL SECTIONS ─── */}
       {getMealSlots(mealCount).map(({ key, label }) => {
