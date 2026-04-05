@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Plus, Copy, ChevronLeft, ChevronRight, Droplets, ChefHat, BarChart3, Calendar, MoreHorizontal } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Plus, Copy, ChevronLeft, ChevronRight, Droplets, ChefHat, BarChart3, Calendar, MoreHorizontal, Trash2 } from 'lucide-react'
 import CalorieRing from '../components/CalorieRing'
 import { useAuth } from '../contexts/AuthContext'
 import { useToast } from '../components/Toast'
 import { getProfile, updateTargets, updateProfile } from '../lib/api/profile'
-import { getMealsForDate, copyMealsFromDate, getRecentDatesWithMeals, addWater, getWeekSummary } from '../lib/api/nutrition'
+import { getMealsForDate, copyMealsFromDate, getRecentDatesWithMeals, addWater, getWeekSummary, deleteMeal } from '../lib/api/nutrition'
 import MealLoggerModal from '../components/MealLoggerModal'
 import RecipeBuilderModal from '../components/RecipeBuilderModal'
 import NutritionTrendsChart from '../components/NutritionTrendsChart'
@@ -39,6 +39,78 @@ function formatDateLabel(dateStr) {
     day: 'numeric',
     month: 'short',
   })
+}
+
+function SwipeableMealItem({ meal, onEdit, onDelete }) {
+  const ref = useRef(null)
+  const startX = useRef(0)
+  const currentX = useRef(0)
+  const [offset, setOffset] = useState(0)
+  const [swiping, setSwiping] = useState(false)
+  const deleteThreshold = -70
+
+  const handleTouchStart = useCallback((e) => {
+    startX.current = e.touches[0].clientX
+    currentX.current = 0
+    setSwiping(true)
+  }, [])
+
+  const handleTouchMove = useCallback((e) => {
+    if (!swiping) return
+    const diff = e.touches[0].clientX - startX.current
+    // Only allow swiping left
+    currentX.current = Math.min(0, Math.max(-100, diff))
+    setOffset(currentX.current)
+  }, [swiping])
+
+  const handleTouchEnd = useCallback(() => {
+    setSwiping(false)
+    if (currentX.current < deleteThreshold) {
+      // Snap to reveal delete
+      setOffset(-80)
+    } else {
+      // Snap back
+      setOffset(0)
+    }
+  }, [])
+
+  const m = meal
+
+  return (
+    <div className="relative overflow-hidden border-t border-zinc-800/50">
+      {/* Delete button (behind) */}
+      <div className="absolute right-0 top-0 bottom-0 flex items-center justify-center w-20 bg-red-500/90">
+        <button
+          onClick={onDelete}
+          className="flex flex-col items-center gap-0.5 text-white"
+        >
+          <Trash2 size={16} />
+          <span className="text-[10px] font-bold">Delete</span>
+        </button>
+      </div>
+      {/* Swipeable content */}
+      <button
+        ref={ref}
+        onClick={() => { if (offset === 0) onEdit(); else setOffset(0) }}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        className="relative w-full text-left flex justify-between items-center px-4 py-3 bg-zinc-950 transition-transform active:bg-zinc-900/50 z-10"
+        style={{
+          transform: `translateX(${offset}px)`,
+          transition: swiping ? 'none' : 'transform 0.2s ease-out',
+        }}
+      >
+        <div className="flex-1 min-w-0 mr-3">
+          <div className="font-medium text-sm truncate">{m.name}</div>
+          <div className="text-xs text-zinc-500 truncate">
+            P {m.protein}g {'\u00B7'} F {m.fat}g {'\u00B7'} C {m.carbs}g
+          </div>
+        </div>
+        <span className="text-sm font-bold text-zinc-300 shrink-0">{m.calories}</span>
+      </button>
+    </div>
+  )
 }
 
 export default function Nutrition() {
@@ -420,21 +492,19 @@ export default function Nutrition() {
               </span>
             </div>
 
-            {/* Food items */}
+            {/* Food items (swipe-to-delete) */}
             {mealsInSlot.map((m) => (
-              <button
+              <SwipeableMealItem
                 key={m.id}
-                onClick={() => openEditModal(m)}
-                className="w-full text-left flex justify-between items-center px-4 py-3 border-t border-zinc-800/50 hover:bg-zinc-900/30 transition active:bg-zinc-900/50"
-              >
-                <div className="flex-1 min-w-0 mr-3">
-                  <div className="font-medium text-sm truncate">{m.name}</div>
-                  <div className="text-xs text-zinc-500 truncate">
-                    P {m.protein}g \u00B7 F {m.fat}g \u00B7 C {m.carbs}g
-                  </div>
-                </div>
-                <span className="text-sm font-bold text-zinc-300 shrink-0">{m.calories}</span>
-              </button>
+                meal={m}
+                onEdit={() => openEditModal(m)}
+                onDelete={async () => {
+                  const { error } = await deleteMeal(user.id, m.id)
+                  if (error) { toast('Failed to delete', 'error'); return }
+                  toast('Deleted', 'success')
+                  fetchMeals()
+                }}
+              />
             ))}
 
             {mealsInSlot.length === 0 && (

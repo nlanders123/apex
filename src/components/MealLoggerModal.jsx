@@ -11,6 +11,7 @@ import {
   logSavedMeal,
   deleteSavedMeal,
   getRecentMeals,
+  getFrequentFoods,
 } from '../lib/api/nutrition'
 import { lookupBarcode, searchFood, searchFoodUSDA } from '../lib/api/food'
 import { searchCommonFoods } from '../lib/common-foods'
@@ -66,6 +67,11 @@ export default function MealLoggerModal({
   const [healthDetail, setHealthDetail] = useState(null) // { health, food }
   const [scannedHealthData, setScannedHealthData] = useState(null) // health data from barcode scan
 
+  // Frequent foods + multi-add
+  const [frequentFoods, setFrequentFoods] = useState([])
+  const [pickTab, setPickTab] = useState('recent') // 'recent' | 'frequent' | 'saved'
+  const [multiAddQueue, setMultiAddQueue] = useState([]) // foods queued for batch logging
+
   const isEdit = !!existingMeal
   const category = mealType
 
@@ -76,6 +82,8 @@ export default function MealLoggerModal({
     setQuantity(1)
     setScannedHealthData(null)
     setHealthDetail(null)
+    setMultiAddQueue([])
+    setPickTab('recent')
     if (existingMeal) {
       setForm({
         name: existingMeal.name ?? 'Quick Add',
@@ -97,14 +105,16 @@ export default function MealLoggerModal({
 
   async function loadSavedMeals() {
     setSavedLoading(true)
-    const [savedResult, recentResult] = await Promise.all([
+    const [savedResult, recentResult, frequentResult] = await Promise.all([
       getSavedMeals(user.id),
       getRecentMeals(user.id, category),
+      getFrequentFoods(user.id),
     ])
     const filtered = savedResult.data.filter((m) => m.category === category)
     setSavedMeals(filtered)
     setRecentMeals(recentResult.data || [])
-    setView(filtered.length > 0 || recentResult.data?.length > 0 ? 'pick' : 'form')
+    setFrequentFoods(frequentResult.data || [])
+    setView(filtered.length > 0 || recentResult.data?.length > 0 || frequentResult.data?.length > 0 ? 'pick' : 'form')
     setSavedLoading(false)
   }
 
@@ -339,6 +349,44 @@ export default function MealLoggerModal({
     setSearching(false)
   }
 
+  // Multi-add: toggle a food in the queue
+  const toggleMultiAdd = (food) => {
+    setMultiAddQueue((prev) => {
+      const exists = prev.find((f) => f.name === food.name)
+      if (exists) return prev.filter((f) => f.name !== food.name)
+      return [...prev, food]
+    })
+  }
+
+  // Multi-add: log all queued foods at once
+  const handleLogMultiAdd = async () => {
+    if (multiAddQueue.length === 0) return
+    setLoading(true)
+    try {
+      for (const food of multiAddQueue) {
+        const { error } = await logMeal(user.id, {
+          category,
+          name: food.name,
+          protein: food.protein || 0,
+          fat: food.fat || 0,
+          carbs: food.carbs || 0,
+          fiber: food.fiber || 0,
+          sodium: food.sodium || 0,
+          sugar: food.sugar || 0,
+        }, selectedDate)
+        if (error) throw error
+      }
+      toast(`Logged ${multiAddQueue.length} item${multiAddQueue.length > 1 ? 's' : ''}`, 'success')
+      setMultiAddQueue([])
+      onLogSuccess()
+      onClose()
+    } catch (error) {
+      toast(error?.message || 'Failed to log foods', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSelectSearchResult = (food) => {
     setForm({
       name: food.name,
@@ -533,34 +581,67 @@ export default function MealLoggerModal({
           </form>
 
           <div className="overflow-y-auto flex-1 space-y-2">
-            {searchResults.map((food, i) => (
-              <button
-                key={food.barcode || i}
-                onClick={() => handleSelectSearchResult(food)}
-                className="w-full text-left bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 transition"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
+            {searchResults.map((food, i) => {
+              const isQueued = multiAddQueue.some((f) => f.name === food.name)
+              return (
+                <div
+                  key={food.barcode || i}
+                  className={`flex items-center gap-2 bg-zinc-950 border rounded-xl px-3 py-3 hover:border-zinc-700 transition ${
+                    isQueued ? 'border-white/30' : 'border-zinc-800'
+                  }`}
+                >
+                  {/* Checkbox for multi-add */}
+                  <button
+                    type="button"
+                    onClick={() => toggleMultiAdd(food)}
+                    className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition ${
+                      isQueued ? 'bg-white border-white' : 'border-zinc-700 hover:border-zinc-500'
+                    }`}
+                  >
+                    {isQueued && (
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="#18181b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </button>
+                  {/* Food info — tap to select directly */}
+                  <button
+                    type="button"
+                    onClick={() => handleSelectSearchResult(food)}
+                    className="flex-1 min-w-0 text-left"
+                  >
                     <div className="text-white text-sm font-medium truncate">{food.name}</div>
                     <div className="text-zinc-500 text-xs mt-0.5">
                       {food.calories} cal · {food.protein}P · {food.fat}F · {food.carbs}C
                       <span className="text-zinc-600 ml-2">per {food.servingSize}</span>
                     </div>
-                  </div>
+                  </button>
                   <FoodHealthBadge
                     food={food}
                     compact
                     onClick={(health) => setHealthDetail({ health, food })}
                   />
                 </div>
-              </button>
-            ))}
+              )
+            })}
             {searchResults.length === 0 && searchQuery && !searching && (
               <div className="text-zinc-500 text-sm text-center py-4">
                 No results. Try a different search term.
               </div>
             )}
           </div>
+
+          {/* Multi-add log button */}
+          {multiAddQueue.length > 0 && (
+            <button
+              type="button"
+              onClick={handleLogMultiAdd}
+              disabled={loading}
+              className="mt-3 w-full bg-white text-zinc-950 font-bold rounded-xl py-3.5 hover:bg-zinc-200 transition active:scale-[0.98] disabled:opacity-50"
+            >
+              {loading ? 'Logging...' : `Log ${multiAddQueue.length} item${multiAddQueue.length > 1 ? 's' : ''}`}
+            </button>
+          )}
         </div>
 
         <FoodDetailModal
@@ -573,12 +654,18 @@ export default function MealLoggerModal({
     )
   }
 
-  // Saved meals picker view
+  // Saved meals picker view (tabbed: Recent | Frequent | Saved)
   if (view === 'pick' && !isEdit) {
+    const tabs = [
+      { key: 'recent', label: 'Recent', count: recentMeals.length },
+      { key: 'frequent', label: 'Frequent', count: frequentFoods.length },
+      { key: 'saved', label: 'Saved', count: savedMeals.length },
+    ]
+
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className="w-full max-w-md bg-zinc-900 rounded-t-3xl sm:rounded-2xl border border-zinc-800 shadow-2xl p-6">
-          <div className="flex justify-between items-center mb-5">
+          <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-bold">Add to {formatMealLabel(mealType)}</h2>
             <button
               type="button"
@@ -589,66 +676,99 @@ export default function MealLoggerModal({
             </button>
           </div>
 
+          {/* Tab bar */}
+          <div className="flex gap-1 mb-4 bg-zinc-950 rounded-xl p-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setPickTab(tab.key)}
+                className={`flex-1 text-xs font-bold py-2 rounded-lg transition ${
+                  pickTab === tab.key
+                    ? 'bg-zinc-800 text-white'
+                    : 'text-zinc-500 hover:text-zinc-300'
+                }`}
+              >
+                {tab.label}
+                {tab.count > 0 && (
+                  <span className="text-zinc-600 ml-1">{tab.count}</span>
+                )}
+              </button>
+            ))}
+          </div>
+
           {savedLoading ? (
             <div className="text-zinc-500 text-sm py-4">Loading...</div>
           ) : (
-            <div className="max-h-60 overflow-y-auto mb-4 space-y-3">
-              {/* Recent meals */}
-              {recentMeals.length > 0 && (
-                <div>
-                  <div className="text-xs font-bold text-zinc-500 mb-1.5 px-1">Recent</div>
-                  <div className="space-y-2">
-                    {recentMeals.map((meal, i) => (
-                      <button
-                        key={`recent-${i}`}
-                        onClick={() => handleLogRecent(meal)}
-                        disabled={loading}
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 hover:bg-zinc-950/70 transition text-left disabled:opacity-50"
-                      >
-                        <div className="text-white font-medium text-sm">{meal.name}</div>
-                        <div className="text-zinc-500 text-xs mt-0.5">
-                          {meal.calories} cal · {meal.protein}P · {meal.fat}F · {meal.carbs}C
-                        </div>
-                      </button>
-                    ))}
+            <div className="max-h-60 overflow-y-auto mb-4 space-y-2">
+              {/* Recent tab */}
+              {pickTab === 'recent' && recentMeals.map((meal, i) => (
+                <button
+                  key={`recent-${i}`}
+                  onClick={() => handleLogRecent(meal)}
+                  disabled={loading}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 hover:bg-zinc-950/70 transition text-left disabled:opacity-50"
+                >
+                  <div className="text-white font-medium text-sm">{meal.name}</div>
+                  <div className="text-zinc-500 text-xs mt-0.5">
+                    {meal.calories} cal · {meal.protein}P · {meal.fat}F · {meal.carbs}C
                   </div>
-                </div>
+                </button>
+              ))}
+              {pickTab === 'recent' && recentMeals.length === 0 && (
+                <div className="text-zinc-600 text-sm text-center py-4">No recent meals for this slot.</div>
               )}
 
-              {/* Saved meals */}
-              {savedMeals.length > 0 && (
-                <div>
-                  <div className="text-xs font-bold text-zinc-500 mb-1.5 px-1">Saved</div>
-                  <div className="space-y-2">
-                    {savedMeals.map((meal) => (
-                      <button
-                        key={meal.id}
-                        onClick={() => handleLogSaved(meal)}
-                        disabled={loading}
-                        className="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 hover:bg-zinc-950/70 transition text-left disabled:opacity-50"
-                      >
-                        <div>
-                          <div className="text-white font-medium text-sm">{meal.name}</div>
-                          <div className="text-zinc-500 text-xs mt-0.5">
-                            {meal.calories} cal · {meal.protein}P · {meal.fat}F · {meal.carbs}C
-                            {meal.serving_unit && (
-                              <span className="text-zinc-600 ml-1">
-                                per {meal.serving_size || 1} {meal.serving_unit}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <button
-                          onClick={(e) => handleDeleteSaved(e, meal)}
-                          className="p-1.5 text-zinc-600 hover:text-red-400 transition"
-                          title="Remove saved meal"
-                        >
-                          <X size={14} />
-                        </button>
-                      </button>
-                    ))}
+              {/* Frequent tab */}
+              {pickTab === 'frequent' && frequentFoods.map((meal, i) => (
+                <button
+                  key={`freq-${i}`}
+                  onClick={() => handleLogRecent(meal)}
+                  disabled={loading}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 hover:bg-zinc-950/70 transition text-left disabled:opacity-50"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="text-white font-medium text-sm">{meal.name}</div>
+                    <span className="text-[10px] text-zinc-600 font-bold">{meal.count}x</span>
                   </div>
-                </div>
+                  <div className="text-zinc-500 text-xs mt-0.5">
+                    {meal.calories} cal · {meal.protein}P · {meal.fat}F · {meal.carbs}C
+                  </div>
+                </button>
+              ))}
+              {pickTab === 'frequent' && frequentFoods.length === 0 && (
+                <div className="text-zinc-600 text-sm text-center py-4">Log more meals to see frequent foods.</div>
+              )}
+
+              {/* Saved tab */}
+              {pickTab === 'saved' && savedMeals.map((meal) => (
+                <button
+                  key={meal.id}
+                  onClick={() => handleLogSaved(meal)}
+                  disabled={loading}
+                  className="w-full flex items-center justify-between bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 hover:border-zinc-700 hover:bg-zinc-950/70 transition text-left disabled:opacity-50"
+                >
+                  <div>
+                    <div className="text-white font-medium text-sm">{meal.name}</div>
+                    <div className="text-zinc-500 text-xs mt-0.5">
+                      {meal.calories} cal · {meal.protein}P · {meal.fat}F · {meal.carbs}C
+                      {meal.serving_unit && (
+                        <span className="text-zinc-600 ml-1">
+                          per {meal.serving_size || 1} {meal.serving_unit}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => handleDeleteSaved(e, meal)}
+                    className="p-1.5 text-zinc-600 hover:text-red-400 transition"
+                    title="Remove saved meal"
+                  >
+                    <X size={14} />
+                  </button>
+                </button>
+              ))}
+              {pickTab === 'saved' && savedMeals.length === 0 && (
+                <div className="text-zinc-600 text-sm text-center py-4">No saved meals yet. Save a favourite from the log form.</div>
               )}
             </div>
           )}

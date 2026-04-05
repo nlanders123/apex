@@ -369,6 +369,41 @@ export async function getRecentMeals(userId, category, limit = 10) {
   return { data: unique, error: null }
 }
 
+/**
+ * Get most frequently logged foods across all time, regardless of category.
+ * Groups by name, returns the most recent macro values for each.
+ */
+export async function getFrequentFoods(userId, limit = 15) {
+  // Fetch all logged meals, then aggregate client-side
+  // (Supabase doesn't support GROUP BY with aggregate easily via JS SDK)
+  const { data, error } = await supabase
+    .from('logged_meals')
+    .select('name, protein, fat, carbs, calories, fiber, sodium, sugar, category, created_at')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(500) // reasonable lookback
+
+  if (error || !data?.length) return { data: [], error }
+
+  // Count frequency per name, keep most recent macros
+  const freq = new Map()
+  for (const meal of data) {
+    const key = meal.name.toLowerCase()
+    if (freq.has(key)) {
+      freq.get(key).count++
+    } else {
+      freq.set(key, { ...meal, count: 1 })
+    }
+  }
+
+  // Sort by count descending, take top N
+  const sorted = [...freq.values()]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit)
+
+  return { data: sorted, error: null }
+}
+
 // --- Saved Meals ---
 
 export async function getSavedMeals(userId) {
